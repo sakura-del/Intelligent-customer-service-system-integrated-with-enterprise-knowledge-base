@@ -1,0 +1,46 @@
+# ===== 本阶段依赖（骨架运行所需）=====
+
+# Web 框架与 ASGI 服务器
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# 配置与环境变量管理
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# HTTP 客户端（TestClient 与后续服务间调用）
+httpx==0.27.2
+
+# 表单与文件上传支持
+python-multipart==0.0.12
+
+# 测试框架
+pytest==8.3.3
+
+# ===== 知识库流水线依赖 =====
+langchain==0.3.0
+langchain-community==0.3.0
+unstructured==0.15.12
+PyMuPDF==1.24.10
+python-docx==1.1.2
+beautifulsoup4==4.12.3
+sentence-transformers==3.1.1
+chromadb==0.5.13
+numpy==1.26.4
+# BM25 关键词检索：混合检索链路使用，与向量召回 RRF 融合
+rank-bm25==0.2.2
+
+# ===== RAG LLM 客户端依赖 =====
+# OpenAI 兼容 SDK：支持 DeepSeek-V3 / GPT-4o-mini 等
+openai>=1.40.0,<2.0.0
+
+# ===== 多 Agent 编排与通信依赖 =====
+# LangGraph：Agent 编排与状态机（不可用时自动 fallback 到同步编排器）
+langgraph>=0.2.34
+# Redis：Agent 间 Pub/Sub 通信与会话存储（不可用时 fallback 到内存队列）
+redis>=5.1.1
+# tzdata：Windows 下 zoneinfo 解析 IANA 时区（如 Asia/Shanghai）所需数据包
+tzdata>=2024.1
+
+# ===== 后续阶段依赖（暂不安装，接入时取消注释）=====
+# elasticsearch==8.15.1         # Elasticsearch 客户端（全文检索）

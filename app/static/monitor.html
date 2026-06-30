@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <!-- 移动端适配：宽度跟随设备，初始缩放 1 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent 监控面板</title>
+    <link rel="stylesheet" href="/static/monitor.css" />
+</head>
+<body>
+    <div class="monitor">
+        <!-- 顶部标题栏：标题 + 刷新控制 -->
+        <header class="topbar">
+            <div class="topbar__title">Agent 监控面板</div>
+            <div class="topbar__actions">
+                <!-- 自动刷新开关：每 5 秒拉取一次最新数据 -->
+                <label class="switch">
+                    <input id="autoRefreshToggle" type="checkbox" checked />
+                    <span>自动刷新</span>
+                </label>
+                <!-- 手动刷新按钮 -->
+                <button id="refreshButton" class="btn btn--primary" type="button">刷新</button>
+                <!-- 返回对话界面 -->
+                <a href="/" class="btn btn--ghost">返回对话</a>
+            </div>
+        </header>
+
+        <!-- 系统概览：总 trace 数、成功率、平均耗时、活跃会话数 -->
+        <section class="overview" id="overview">
+            <div class="metric">
+                <div class="metric__label">总 Trace</div>
+                <div class="metric__value" id="metricTotal">-</div>
+            </div>
+            <div class="metric">
+                <div class="metric__label">成功率</div>
+                <div class="metric__value metric__value--success" id="metricSuccessRate">-</div>
+            </div>
+            <div class="metric">
+                <div class="metric__label">平均耗时</div>
+                <div class="metric__value" id="metricAvgDuration">-</div>
+            </div>
+            <div class="metric">
+                <div class="metric__label">失败数</div>
+                <div class="metric__value metric__value--danger" id="metricFailed">-</div>
+            </div>
+            <div class="metric">
+                <div class="metric__label">活跃会话</div>
+                <div class="metric__value" id="metricSessions">-</div>
+            </div>
+        </section>
+
+        <!-- 主体内容：左侧 Trace 列表 + 右侧详情 -->
+        <div class="main">
+            <!-- Trace 列表 -->
+            <section class="panel panel--traces">
+                <div class="panel__header">
+                    <h2 class="panel__title">最近 Trace</h2>
+                    <span class="panel__hint" id="tracesHint">-</span>
+                </div>
+                <div class="panel__body">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>意图</th>
+                                <th>路由路径</th>
+                                <th>耗时</th>
+                                <th>状态</th>
+                                <th>转人工</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tracesBody">
+                            <tr><td colspan="6" class="empty">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Trace 详情 -->
+            <section class="panel panel--detail">
+                <div class="panel__header">
+                    <h2 class="panel__title">Trace 详情</h2>
+                </div>
+                <div class="panel__body" id="traceDetail">
+                    <div class="empty">点击左侧 Trace 查看详情</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Agent 状态区 -->
+        <section class="panel panel--agents">
+            <div class="panel__header">
+                <h2 class="panel__title">Agent 状态</h2>
+            </div>
+            <div class="panel__body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Agent</th>
+                            <th>调用次数</th>
+                            <th>成功次数</th>
+                            <th>平均耗时</th>
+                            <th>总耗时</th>
+                            <th>成功率</th>
+                        </tr>
+                    </thead>
+                    <tbody id="agentsBody">
+                        <tr><td colspan="6" class="empty">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 活跃会话区 -->
+        <section class="panel panel--sessions">
+            <div class="panel__header">
+                <h2 class="panel__title">活跃会话</h2>
+            </div>
+            <div class="panel__body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>会话 ID</th>
+                            <th>渠道</th>
+                            <th>轮次</th>
+                            <th>失败次数</th>
+                            <th>当前意图</th>
+                            <th>最后活跃</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionsBody">
+                        <tr><td colspan="6" class="empty">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/monitor.js"></script>
+</body>
+</html>

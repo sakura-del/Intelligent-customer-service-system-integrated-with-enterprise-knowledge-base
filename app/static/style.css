@@ -1,0 +1,477 @@
+/* ===== 全局变量：统一颜色与圆角，便于主题维护 ===== */
+:root {
+    --color-bg: #f5f7fa;
+    --color-surface: #ffffff;
+    --color-primary: #2563eb;
+    --color-primary-dark: #1d4ed8;
+    --color-text: #1f2937;
+    --color-text-muted: #6b7280;
+    --color-border: #e5e7eb;
+    --color-user-bubble: #2563eb;
+    --color-user-text: #ffffff;
+    --color-bot-bubble: #ffffff;
+    --color-error: #dc2626;
+    --color-error-bg: #fef2f2;
+    --radius-bubble: 14px;
+    --radius-input: 8px;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* ===== 基础重置：移除默认边距，盒模型统一 ===== */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+/* ===== 应用容器：占满视口，纵向 flex 三段式布局 ===== */
+.app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 880px;
+    margin: 0 auto;
+    background: var(--color-bg);
+}
+
+/* ===== 顶部标题栏 ===== */
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
+    flex-shrink: 0;
+}
+
+.topbar__title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--color-text);
+    white-space: nowrap;
+}
+
+.topbar__settings {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+/* 监控面板入口链接 */
+.topbar__link {
+    display: inline-flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 12px;
+    font-size: 14px;
+    color: var(--color-primary);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-input);
+    text-decoration: none;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.topbar__link:hover {
+    border-color: var(--color-primary);
+    background: #eef2ff;
+}
+
+/* ===== 通用输入控件样式 ===== */
+.select,
+.input {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 14px;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-input);
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.select:focus,
+.input:focus {
+    border-color: var(--color-primary);
+}
+
+.input--key {
+    width: 200px;
+}
+
+/* ===== 对话区：消息流，溢出滚动 ===== */
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ===== 单条消息行：左右对齐控制 ===== */
+.message {
+    display: flex;
+    width: 100%;
+    animation: fade-in 0.2s ease;
+}
+
+.message--user {
+    justify-content: flex-end;
+}
+
+.message--bot {
+    justify-content: flex-start;
+}
+
+/* ===== 气泡本体 ===== */
+.bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: var(--radius-bubble);
+    word-wrap: break-word;
+    word-break: break-word;
+    box-shadow: var(--shadow-sm);
+}
+
+.message--user .bubble {
+    background: var(--color-user-bubble);
+    color: var(--color-user-text);
+    border-bottom-right-radius: 4px;
+}
+
+.message--bot .bubble {
+    background: var(--color-bot-bubble);
+    color: var(--color-text);
+    border-bottom-left-radius: 4px;
+}
+
+.message--error .bubble {
+    background: var(--color-error-bg);
+    color: var(--color-error);
+    border: 1px solid var(--color-error);
+}
+
+/* ===== 来源与置信度折叠区 ===== */
+.meta {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+}
+
+.meta__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    color: var(--color-primary);
+    user-select: none;
+}
+
+.meta__toggle:hover {
+    text-decoration: underline;
+}
+
+.meta__arrow {
+    display: inline-block;
+    transition: transform 0.15s ease;
+}
+
+.meta__arrow.is-open {
+    transform: rotate(90deg);
+}
+
+.meta__content {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: #f9fafb;
+    border-left: 3px solid var(--color-primary);
+    border-radius: 4px;
+    display: none;
+}
+
+.meta__content.is-open {
+    display: block;
+}
+
+.meta__confidence {
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.meta__source-item {
+    padding: 2px 0;
+}
+
+.meta__chunk {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
+/* ===== 正在输入动画 ===== */
+.typing {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px 0;
+}
+
+.typing__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-text-muted);
+    opacity: 0.4;
+    animation: typing-bounce 1.2s infinite ease-in-out;
+}
+
+.typing__dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing__dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing-bounce {
+    0%, 60%, 100% {
+        opacity: 0.4;
+        transform: translateY(0);
+    }
+    30% {
+        opacity: 1;
+        transform: translateY(-4px);
+    }
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ===== 底部输入区 ===== */
+.composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.composer__input {
+    flex: 1;
+    max-height: 120px;
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-input);
+    resize: none;
+    outline: none;
+    transition: border-color 0.15s ease;
+    line-height: 1.4;
+}
+
+.composer__input:focus {
+    border-color: var(--color-primary);
+}
+
+.composer__send {
+    height: 40px;
+    padding: 0 20px;
+    font-size: 15px;
+    color: #ffffff;
+    background: var(--color-primary);
+    border: none;
+    border-radius: var(--radius-input);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    white-space: nowrap;
+}
+
+.composer__send:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+}
+
+.composer__send:disabled {
+    background: var(--color-text-muted);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* ===== 流式模式开关 ===== */
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 10px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-input);
+    cursor: pointer;
+    user-select: none;
+    font-size: 14px;
+    transition: border-color 0.15s ease;
+}
+
+.toggle:hover {
+    border-color: var(--color-primary);
+}
+
+.toggle__input {
+    margin: 0;
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+    accent-color: var(--color-primary);
+}
+
+.toggle__label {
+    color: var(--color-text);
+    white-space: nowrap;
+}
+
+/* ===== 流式打字光标：通过气泡 ::after 实现闪烁效果 ===== */
+.bubble.is-typing::after {
+    content: "▋";
+    margin-left: 2px;
+    color: var(--color-primary);
+    animation: typing-cursor-blink 1s steps(2) infinite;
+}
+
+@keyframes typing-cursor-blink {
+    0%, 50% {
+        opacity: 1;
+    }
+    51%, 100% {
+        opacity: 0;
+    }
+}
+
+/* ===== 流式 meta 区：意图与来源徽章 ===== */
+.stream-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+
+.stream-meta__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: #ffffff;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.stream-meta__badge--intent {
+    background: var(--color-primary);
+}
+
+.stream-meta__badge--source {
+    background: var(--color-text-muted);
+}
+
+/* 转人工提示 */
+.stream-meta__escalate {
+    margin-top: 8px;
+    padding: 4px 8px;
+    color: var(--color-error);
+    background: var(--color-error-bg);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* ===== 流式错误提示（气泡内联，区别于整条错误消息） ===== */
+.stream-error {
+    margin-top: 6px;
+    padding: 4px 8px;
+    color: var(--color-error);
+    background: var(--color-error-bg);
+    border-left: 3px solid var(--color-error);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* ===== 响应式：窄屏（手机）适配 ===== */
+@media (max-width: 600px) {
+    .app {
+        height: 100vh;
+    }
+
+    .topbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 10px 12px;
+    }
+
+    .topbar__title {
+        text-align: center;
+    }
+
+    .topbar__settings {
+        justify-content: space-between;
+    }
+
+    .input--key {
+        flex: 1;
+        width: auto;
+        min-width: 0;
+    }
+
+    .messages {
+        padding: 12px;
+    }
+
+    .bubble {
+        max-width: 88%;
+    }
+
+    .composer {
+        padding: 10px 12px;
+    }
+
+    .composer__send {
+        padding: 0 14px;
+    }
+}

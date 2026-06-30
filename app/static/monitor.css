@@ -1,0 +1,424 @@
+/* ===== 全局变量：与对话界面保持一致的视觉风格 ===== */
+:root {
+    --color-bg: #f5f7fa;
+    --color-surface: #ffffff;
+    --color-primary: #2563eb;
+    --color-primary-dark: #1d4ed8;
+    --color-success: #16a34a;
+    --color-success-bg: #dcfce7;
+    --color-danger: #dc2626;
+    --color-danger-bg: #fef2f2;
+    --color-warning: #d97706;
+    --color-warning-bg: #fef3c7;
+    --color-text: #1f2937;
+    --color-text-muted: #6b7280;
+    --color-border: #e5e7eb;
+    --radius: 8px;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* ===== 监控面板容器 ===== */
+.monitor {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* ===== 顶部标题栏 ===== */
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+}
+
+.topbar__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.topbar__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+/* ===== 开关样式 ===== */
+.switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 14px;
+    color: var(--color-text-muted);
+}
+
+.switch input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--color-primary);
+}
+
+/* ===== 按钮 ===== */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    padding: 0 16px;
+    font-size: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.btn--primary {
+    background: var(--color-primary);
+    color: #fff;
+    border-color: var(--color-primary);
+}
+
+.btn--primary:hover {
+    background: var(--color-primary-dark);
+    color: #fff;
+}
+
+.btn--ghost {
+    background: transparent;
+}
+
+/* ===== 概览指标区 ===== */
+.overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+}
+
+.metric {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
+}
+
+.metric__label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    margin-bottom: 4px;
+}
+
+.metric__value {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.metric__value--success {
+    color: var(--color-success);
+}
+
+.metric__value--danger {
+    color: var(--color-danger);
+}
+
+/* ===== 主体：左右分栏（Trace 列表 + 详情） ===== */
+.main {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 12px;
+    min-height: 420px;
+}
+
+/* ===== 面板通用样式 ===== */
+.panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border);
+    background: #fafbfc;
+}
+
+.panel__title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.panel__hint {
+    font-size: 12px;
+    color: var(--color-text-muted);
+}
+
+.panel__body {
+    padding: 0;
+    overflow: auto;
+    max-height: 520px;
+}
+
+/* ===== 表格 ===== */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.table thead th {
+    position: sticky;
+    top: 0;
+    background: #fafbfc;
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--color-text-muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--color-border);
+    z-index: 1;
+}
+
+.table tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+    vertical-align: top;
+}
+
+.table tbody tr {
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.table tbody tr:hover {
+    background: #f0f5ff;
+}
+
+.table tbody tr.is-active {
+    background: #e0e7ff;
+}
+
+.table tbody tr.is-row-hover {
+    cursor: default;
+}
+
+.table tbody tr.is-row-hover:hover {
+    background: transparent;
+}
+
+.empty {
+    text-align: center;
+    color: var(--color-text-muted);
+    padding: 24px 12px !important;
+    cursor: default !important;
+}
+
+/* ===== 状态标签 ===== */
+.tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.tag--success {
+    background: var(--color-success-bg);
+    color: var(--color-success);
+}
+
+.tag--failed {
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+}
+
+.tag--running {
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+}
+
+.tag--escalate {
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+}
+
+/* ===== 路由路径节点链 ===== */
+.route-path {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+.route-path__node {
+    display: inline-block;
+    padding: 1px 6px;
+    background: #eef2ff;
+    color: var(--color-primary);
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.route-path__arrow {
+    color: var(--color-text-muted);
+    font-size: 11px;
+}
+
+/* ===== Trace 详情区 ===== */
+.trace-meta {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 13px;
+}
+
+.trace-meta__row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.trace-meta__label {
+    color: var(--color-text-muted);
+    min-width: 80px;
+}
+
+.trace-meta__value {
+    color: var(--color-text);
+    word-break: break-all;
+}
+
+.trace-steps {
+    padding: 12px 16px;
+}
+
+.trace-steps__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 8px;
+}
+
+.step-item {
+    border-left: 3px solid var(--color-primary);
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background: #f9fafb;
+    border-radius: 0 4px 4px 0;
+}
+
+.step-item__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.step-item__node {
+    font-weight: 600;
+    color: var(--color-primary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.step-item__duration {
+    font-size: 12px;
+    color: var(--color-text-muted);
+}
+
+.step-item__io {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+    word-break: break-all;
+}
+
+.step-item__io-label {
+    color: var(--color-text);
+    font-weight: 500;
+}
+
+/* ===== 响应式：窄屏单列布局 ===== */
+@media (max-width: 900px) {
+    .main {
+        grid-template-columns: 1fr;
+    }
+
+    .panel__body {
+        max-height: 360px;
+    }
+}
+
+@media (max-width: 600px) {
+    .monitor {
+        padding: 8px;
+    }
+
+    .topbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .topbar__actions {
+        justify-content: space-between;
+    }
+
+    .overview {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .metric__value {
+        font-size: 18px;
+    }
+}

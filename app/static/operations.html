@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <!-- 移动端适配：宽度跟随设备，初始缩放 1 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>运营数据看板</title>
+    <link rel="stylesheet" href="/static/operations.css" />
+</head>
+<body>
+    <div class="ops">
+        <!-- 顶部标题栏：标题 + 刷新控制 -->
+        <header class="topbar">
+            <div class="topbar__title">运营数据看板</div>
+            <div class="topbar__actions">
+                <!-- 自动刷新开关：每 30 秒拉取一次最新数据 -->
+                <label class="switch">
+                    <input id="autoRefreshToggle" type="checkbox" checked />
+                    <span>自动刷新（30s）</span>
+                </label>
+                <button id="refreshButton" class="btn btn--primary" type="button">刷新</button>
+                <a href="/" class="btn btn--ghost">返回对话</a>
+                <a href="/monitor" class="btn btn--ghost">Agent 监控</a>
+            </div>
+        </header>
+
+        <!-- 顶部统计卡片：会话/工单/转接/满意度/知识库 -->
+        <section class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-card__label">总会话数</div>
+                <div class="metric-card__value" id="sessionTotal">-</div>
+                <div class="metric-card__sub">活跃：<span id="sessionActive">-</span> · 平均轮数：<span id="sessionAvgTurn">-</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-card__label">工单总数</div>
+                <div class="metric-card__value" id="ticketTotal">-</div>
+                <div class="metric-card__sub">新增 <span id="ticketNew">-</span> · 已解决 <span id="ticketResolved">-</span> · 未解决 <span id="ticketUnresolved">-</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-card__label">转接次数</div>
+                <div class="metric-card__value" id="escalationTotal">-</div>
+                <div class="metric-card__sub">人工接通率：<span id="escalationPickup">-</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-card__label">满意度</div>
+                <div class="metric-card__value metric-card__value--success" id="satisfactionScore">-</div>
+                <div class="metric-card__sub">样本 <span id="satisfactionSample">-</span> · 正面率 <span id="satisfactionPositive">-</span></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-card__label">知识库条目</div>
+                <div class="metric-card__value" id="knowledgeTotal">-</div>
+                <div class="metric-card__sub">近 7 天入库 <span id="knowledgeRecent">-</span></div>
+            </div>
+        </section>
+
+        <!-- 主体：左工单分类 + 右转接原因 -->
+        <div class="main">
+            <!-- 工单分类分布 -->
+            <section class="panel">
+                <div class="panel__header">
+                    <h2 class="panel__title">工单分类分布</h2>
+                </div>
+                <div class="panel__body" id="ticketCategoryBody">
+                    <div class="empty">暂无数据</div>
+                </div>
+            </section>
+
+            <!-- 转接原因分布 -->
+            <section class="panel">
+                <div class="panel__header">
+                    <h2 class="panel__title">转接原因分布</h2>
+                </div>
+                <div class="panel__body" id="escalationReasonBody">
+                    <div class="empty">暂无数据</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 知识库类型分布 -->
+        <section class="panel">
+            <div class="panel__header">
+                <h2 class="panel__title">知识库类型分布</h2>
+            </div>
+            <div class="panel__body" id="knowledgeTypeBody">
+                <div class="empty">暂无数据</div>
+            </div>
+        </section>
+
+        <!-- 上线检查清单 -->
+        <section class="panel">
+            <div class="panel__header">
+                <h2 class="panel__title">上线检查清单</h2>
+                <div class="panel__hint">
+                    <span class="tag tag--success" id="checklistPassed">通过 -</span>
+                    <span class="tag tag--failed" id="checklistFailed">失败 -</span>
+                    <span class="tag tag--warning" id="checklistWarned">警告 -</span>
+                </div>
+            </div>
+            <div class="panel__body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>检查项</th>
+                            <th>状态</th>
+                            <th>信息</th>
+                            <th>耗时</th>
+                        </tr>
+                    </thead>
+                    <tbody id="checklistBody">
+                        <tr><td colspan="4" class="empty">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 实验列表 -->
+        <section class="panel">
+            <div class="panel__header">
+                <h2 class="panel__title">灰度实验</h2>
+                <button id="createExperimentBtn" class="btn btn--primary" type="button">新建实验</button>
+            </div>
+            <div class="panel__body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>实验名</th>
+                            <th>描述</th>
+                            <th>分组</th>
+                            <th>目标指标</th>
+                            <th>状态</th>
+                            <th>更新时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="experimentsBody">
+                        <tr><td colspan="6" class="empty">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 创建实验对话框（隐藏） -->
+        <div class="dialog" id="createDialog" style="display:none;">
+            <div class="dialog__panel">
+                <div class="dialog__header">
+                    <h3>新建实验</h3>
+                    <button id="dialogCloseBtn" class="btn btn--ghost" type="button">×</button>
+                </div>
+                <div class="dialog__body">
+                    <label class="form-label">实验名</label>
+                    <input id="expName" class="form-input" type="text" placeholder="如：rerank_v2_canary" />
+                    <label class="form-label">描述</label>
+                    <input id="expDesc" class="form-input" type="text" placeholder="实验描述" />
+                    <label class="form-label">分组配置（每行：分组名:权重）</label>
+                    <textarea id="expVariants" class="form-input" rows="4" placeholder="control:9&#10;treatment:1"></textarea>
+                    <label class="form-label">目标指标（逗号分隔）</label>
+                    <input id="expMetrics" class="form-input" type="text" placeholder="recall,precision" />
+                </div>
+                <div class="dialog__footer">
+                    <button id="dialogCancelBtn" class="btn" type="button">取消</button>
+                    <button id="dialogSubmitBtn" class="btn btn--primary" type="button">创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/operations.js"></script>
+</body>
+</html>

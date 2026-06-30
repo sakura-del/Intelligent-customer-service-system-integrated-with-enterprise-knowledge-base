@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <!-- 移动端适配：宽度跟随设备，初始缩放 1 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>智能客服系统</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+    <div class="app">
+        <!-- 顶部标题栏：系统名称 + 设置区（API Key、渠道） -->
+        <header class="topbar">
+            <div class="topbar__title">智能客服系统</div>
+            <div class="topbar__settings">
+                <!-- 监控面板入口：跳转到 /monitor.html 查看多 Agent 协同监控 -->
+                <a href="/monitor" class="topbar__link" target="_blank" rel="noopener">监控面板</a>
+                <!-- 流式模式开关：开启时走 SSE 流式响应（边生成边显示），关闭时走传统非流式 -->
+                <label class="toggle" title="开启后边生成边显示，关闭则等待完整回复">
+                    <input type="checkbox" id="streamToggle" class="toggle__input" checked />
+                    <span class="toggle__label">流式模式</span>
+                </label>
+                <!-- 渠道选择：默认 web -->
+                <select id="channelSelect" class="select" title="选择接入渠道">
+                    <option value="web" selected>Web</option>
+                    <option value="app">App</option>
+                    <option value="wechat">微信</option>
+                    <option value="dingtalk">钉钉</option>
+                </select>
+                <!-- API Key：开发模式可留空，生产模式填入后存 localStorage -->
+                <input
+                    id="apiKeyInput"
+                    class="input input--key"
+                    type="password"
+                    placeholder="API Key（开发模式可留空）"
+                    autocomplete="off"
+                />
+            </div>
+        </header>
+
+        <!-- 对话区：消息流，溢出滚动 -->
+        <main id="messageList" class="messages" aria-live="polite">
+            <!-- 欢迎消息，由 JS 注入 -->
+        </main>
+
+        <!-- 底部输入区：输入框 + 发送按钮，回车发送 -->
+        <footer class="composer">
+            <textarea
+                id="messageInput"
+                class="composer__input"
+                rows="1"
+                placeholder="请输入您的问题，回车发送，Shift+回车换行"
+                autofocus
+            ></textarea>
+            <button id="sendButton" class="composer__send" type="button">发送</button>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
