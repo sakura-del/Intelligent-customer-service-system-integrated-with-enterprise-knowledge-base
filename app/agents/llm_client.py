@@ -91,11 +91,22 @@ class LLMClient:
     客户端实例按需创建，避免在未使用时即建立网络连接。
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        """构造 LLM 客户端。
+
+        默认从 Settings 读取主 LLM 配置；传入 api_key/base_url/model 时
+        使用自定义配置（用于小模型客户端等场景），保持与默认客户端行为一致。
+        """
         settings = get_settings()
-        self.api_key = settings.LLM_API_KEY
-        self.base_url = settings.LLM_BASE_URL
-        self.model = settings.LLM_MODEL
+        self.api_key = api_key if api_key is not None else settings.LLM_API_KEY
+        self.base_url = base_url if base_url is not None else settings.LLM_BASE_URL
+        self.model = model if model is not None else settings.LLM_MODEL
         self._client = None
         self._mock: Optional[_MockLLM] = None
 
@@ -333,6 +344,8 @@ def _slice_text_to_stream(
 
 # 模块级单例：LLM 客户端无状态，进程内复用
 _llm_client: Optional[LLMClient] = None
+# 小模型客户端单例：未配置 SMALL_LLM_API_KEY 时为 None，调用方降级到主 LLM
+_small_llm_client: Optional[LLMClient] = None
 
 
 def get_llm_client() -> LLMClient:
@@ -347,3 +360,29 @@ def reset_llm_client() -> None:
     """重置单例，便于测试切换配置。"""
     global _llm_client
     _llm_client = None
+
+
+def get_small_llm_client() -> Optional[LLMClient]:
+    """获取小模型 LLMClient 单例。
+
+    未配置 SMALL_LLM_API_KEY 时返回 None，调用方应降级到主 LLMClient，
+    保证未配置小模型时主链路仍可用。
+    """
+    global _small_llm_client
+    if _small_llm_client is not None:
+        return _small_llm_client
+    settings = get_settings()
+    if not settings.SMALL_LLM_API_KEY:
+        return None
+    _small_llm_client = LLMClient(
+        api_key=settings.SMALL_LLM_API_KEY,
+        base_url=settings.SMALL_LLM_BASE_URL,
+        model=settings.SMALL_LLM_MODEL,
+    )
+    return _small_llm_client
+
+
+def reset_small_llm_client() -> None:
+    """重置小模型单例，便于测试切换配置。"""
+    global _small_llm_client
+    _small_llm_client = None
