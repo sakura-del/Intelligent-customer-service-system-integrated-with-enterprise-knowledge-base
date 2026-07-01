@@ -30,7 +30,7 @@
 ## 响应时间压测
 - [x] 10 条查询响应时间已记录（优化后复测）
 - [x] 平均响应时间 = 2.27s，P95 = 7.94s
-- [x] 「平均响应时间 ≤ 3 秒」达标判定：**达标**（2.27s ≤ 3s；优化措施：HotQueryCache 接入 run_graph 入出口 + ModelRouter 接入 KnowledgeAgent + 意图识别快通道 + 非知识问答跳过 DialogAgent LLM 润色；优化前 4.08s → 优化后 2.27s 降幅 44%；P95=7.94s 未达 ≤ 5s 目标，根因为 knowledge_qa 真实 LLM 生成固需 7-8s，需启用流式响应进一步优化首 token 时间）
+- [x] 「平均响应时间 ≤ 3 秒」达标判定：**达标**（2.27s ≤ 3s；优化措施：HotQueryCache + ModelRouter + 意图识别快通道 + 非知识问答跳过 LLM 润色；流式响应优化：快通道首 Token avg=11ms < 200ms 达标，知识问答首 Token avg=2733ms 受真实 LLM 意图识别限制未达 1s 目标，需下一阶段优化；首 Token 监控指标已接入 metrics 接口：stream_first_token_ms_avg=1466ms, p95=6107ms）
 
 ## 原项目 checklist 更新
 - [x] `build-customer-service-system/checklist.md` 中 4 个未通过检查点状态已根据验证结果更新

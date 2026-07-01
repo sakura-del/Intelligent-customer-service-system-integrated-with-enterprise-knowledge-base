@@ -49,6 +49,9 @@ MAX_CONCURRENT_LLM_CALLS = int(os.environ.get("MAX_CONCURRENT_LLM_CALLS", "10"))
 # 热点缓存容量与 TTL
 HOT_CACHE_MAX_SIZE = int(os.environ.get("HOT_CACHE_MAX_SIZE", "1000"))
 HOT_CACHE_TTL = int(os.environ.get("HOT_CACHE_TTL", "300"))
+# 意图识别结果缓存：TTL 较长（意图稳定），容量较大（覆盖更多 query 变体）
+INTENT_CACHE_MAX_SIZE = int(os.environ.get("INTENT_CACHE_MAX_SIZE", "5000"))
+INTENT_CACHE_TTL = int(os.environ.get("INTENT_CACHE_TTL", "1800"))
 # 响应时间采样上限：超过则 FIFO 丢弃，控制内存
 RESPONSE_TIME_SAMPLE_LIMIT = 100
 
@@ -84,7 +87,15 @@ class ModelRouter:
 
     根据查询复杂度（长度/多意图/跨域/情绪/轮次）计算评分，
     低于阈值路由到小模型（省成本），否则路由到大模型（保质量）。
-    复用现有 LLMClient，通过临时切换 model 字段实现 model_override。
+
+    双 Provider 路由：
+    - 小模型走独立 SmallLLMClient（豆包/千问，OpenAI 兼容接口）
+    - 大模型走主 LLMClient（DeepSeek 等）
+    - 未配置 SMALL_LLM_API_KEY 时 small_client 为 None，自动降级到主 LLMClient，
+      保持兼容性
+
+    ModelRouter 不直接持有 small_client 引用，每次调用时延迟获取，
+    避免 ModelRouter 单例初始化早于 LLMClient 配置加载。
     """
 
     def __init__(
@@ -182,6 +193,21 @@ class ModelRouter:
             stat["calls"] += 1
             stat["total_complexity"] += complexity
 
+    @staticmethod
+    def _get_small_client() -> Optional[Any]:
+        """延迟获取小模型 LLMClient 单例。
+
+        未配置 SMALL_LLM_API_KEY 时返回 None，调用方降级到主 LLMClient。
+        每次调用都从 llm_client 模块获取，保证单例创建后能被复用。
+        """
+        try:
+            from app.agents.llm_client import get_small_llm_client
+
+            return get_small_llm_client()
+        except Exception as exc:
+            logger.warning("获取小模型客户端失败，降级主 LLM：%s", exc)
+            return None
+
     def chat_with_routing(
         self,
         messages: List[Dict[str, Any]],
@@ -192,34 +218,71 @@ class ModelRouter:
     ) -> str:
         """根据 query 路由到合适模型并调用 LLMClient 生成回复。
 
-        model_override 非空时直接使用该模型，否则按 route() 决策。
-        通过临时修改 LLMClient.model 实现 model_override，
-        try/finally 保证恢复，异常时降级到默认模型重试。
+        双 Provider 路由策略：
+        - model_override 非空：直接用主 client 临时切换 model（兼容旧逻辑）
+        - 路由到小模型且 small_client 可用：用 small_client（独立 Provider）
+        - 路由到小模型但 small_client 不可用：降级主 client 临时切换 model
+        - 路由到大模型：用主 client
 
-        注意：临时切换 model 在高并发下存在竞态（best-effort），
-        mock 模式下不影响结果；生产场景偶发模型错配会触发降级重试。
+        异常时降级到主 client 重试，保证链路可用。
         """
         # 延迟导入避免循环依赖与启动开销
         from app.agents.llm_client import get_llm_client
 
-        client = get_llm_client()
         # model_override 优先，否则按 query 路由
         target_model = model_override or self.route(query)
-        original_model = client.model
+        main_client = get_llm_client()
 
+        # 双 Provider 路由：路由到小模型且 small_client 可用时走独立客户端
+        # small_client 是独立的 LLMClient 实例，有自己的 base_url/model/api_key
+        if not model_override and target_model == self._small_model:
+            small_client = self._get_small_client()
+            if small_client is not None:
+                try:
+                    return small_client.chat(messages, **kwargs)
+                except Exception as exc:
+                    # 小模型调用失败：降级主 client 重试，保证链路可用
+                    logger.warning(
+                        "小模型 %s 调用失败，降级主 LLM 重试：%s",
+                        self._small_model,
+                        exc,
+                    )
+                    # 走主 client 路径，注意不再走 small_client 分支
+                    return self._chat_with_main_fallback(
+                        main_client, messages, target_model, **kwargs
+                    )
+
+        # 主 client 路径：临时切换 model 实现 model_override
+        return self._chat_with_main_fallback(
+            main_client, messages, target_model, **kwargs
+        )
+
+    @staticmethod
+    def _chat_with_main_fallback(
+        main_client: Any,
+        messages: List[Dict[str, Any]],
+        target_model: str,
+        **kwargs: Any,
+    ) -> str:
+        """主 client 调用：临时切换 model，异常时降级到原 model 重试。
+
+        临时切换 model 在高并发下存在竞态（best-effort），
+        mock 模式下不影响结果；生产场景偶发模型错配会触发降级重试。
+        """
+        original_model = main_client.model
         try:
-            client.model = target_model
-            return client.chat(messages, **kwargs)
+            main_client.model = target_model
+            return main_client.chat(messages, **kwargs)
         except Exception as exc:
             # 调用失败：恢复默认模型并重试一次，保证链路可用
             logger.warning(
                 "模型 %s 调用失败，降级默认模型重试：%s", target_model, exc
             )
-            client.model = original_model
-            return client.chat(messages, **kwargs)
+            main_client.model = original_model
+            return main_client.chat(messages, **kwargs)
         finally:
             # 确保 model 总能恢复，避免污染后续调用
-            client.model = original_model
+            main_client.model = original_model
 
     def get_stats(self) -> Dict[str, Any]:
         """返回路由统计（线程安全）。"""
@@ -339,6 +402,111 @@ class HotQueryCache:
                 self._store.move_to_end(key)
             self._store[key] = entry
             # LRU 淘汰：超限时弹出头部（最旧）
+            while len(self._store) > self._max_size:
+                self._store.popitem(last=False)
+                self._evicted += 1
+
+    def invalidate(self) -> int:
+        """清空全部缓存，返回被清除的条目数。"""
+        with self._lock:
+            cleared = len(self._store)
+            self._store.clear()
+            return cleared
+
+    def get_stats(self) -> Dict[str, Any]:
+        """返回缓存统计（线程安全）。"""
+        with self._lock:
+            total = self._hits + self._misses
+            hit_rate = self._hits / total if total > 0 else 0.0
+            return {
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": round(hit_rate, 4),
+                "size": len(self._store),
+                "max_size": self._max_size,
+                "evicted": self._evicted,
+                "ttl_seconds": self._ttl,
+            }
+
+    def reset_stats(self) -> None:
+        """重置统计与缓存，便于测试隔离。"""
+        with self._lock:
+            self._store.clear()
+            self._hits = 0
+            self._misses = 0
+            self._evicted = 0
+
+
+# ----------------------------------------------------------------------
+# IntentCache：意图识别结果缓存（LRU + TTL）
+# ----------------------------------------------------------------------
+class IntentCache:
+    """意图识别结果缓存：LRU + TTL 淘汰。
+
+    缓存 query → IntentResult，命中时跳过 LLM 意图识别调用，
+    把首 Token 时间从 2.7s 降到 ~800ms（仅检索+生成）。
+    意图稳定（同一 query 的意图通常不变），TTL 设较长（30 分钟）。
+    key = normalized query，value = IntentResult + expires_at。
+    """
+
+    def __init__(
+        self,
+        max_size: int = INTENT_CACHE_MAX_SIZE,
+        ttl_seconds: int = INTENT_CACHE_TTL,
+    ) -> None:
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+        self._enabled = True
+        try:
+            self._store: "OrderedDict[str, tuple[Any, float]]" = OrderedDict()
+        except Exception as exc:
+            logger.warning("意图缓存初始化失败，降级为不缓存：%s", exc)
+            self._enabled = False
+            self._store = OrderedDict()
+        self._hits = 0
+        self._misses = 0
+        self._evicted = 0
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _normalize(query: str) -> str:
+        """归一化 query 作为缓存键：strip + lower，消除大小写与首尾空白差异。"""
+        return (query or "").strip().lower()
+
+    def get(self, query: str) -> Optional[Any]:
+        """获取意图缓存，命中且未过期返回 IntentResult，否则 None。"""
+        if not self._enabled:
+            return None
+        key = self._normalize(query)
+        if not key:
+            return None
+        now = time.monotonic()
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                self._misses += 1
+                return None
+            intent_result, expires_at = entry
+            if now >= expires_at:
+                self._store.pop(key, None)
+                self._misses += 1
+                return None
+            self._store.move_to_end(key)
+            self._hits += 1
+            return intent_result
+
+    def set(self, query: str, intent_result: Any) -> None:
+        """写入意图缓存，超限时按 LRU 淘汰最旧。"""
+        if not self._enabled:
+            return
+        key = self._normalize(query)
+        if not key:
+            return
+        now = time.monotonic()
+        with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+            self._store[key] = (intent_result, now + self._ttl)
             while len(self._store) > self._max_size:
                 self._store.popitem(last=False)
                 self._evicted += 1
@@ -569,6 +737,7 @@ class ConcurrencyOptimizer:
 # ----------------------------------------------------------------------
 _model_router: Optional[ModelRouter] = None
 _hot_query_cache: Optional[HotQueryCache] = None
+_intent_cache: Optional[IntentCache] = None
 _concurrency_optimizer: Optional[ConcurrencyOptimizer] = None
 _singleton_lock = threading.Lock()
 
@@ -607,6 +776,23 @@ def reset_hot_query_cache() -> None:
         _hot_query_cache = None
 
 
+def get_intent_cache() -> IntentCache:
+    """获取 IntentCache 单例。"""
+    global _intent_cache
+    if _intent_cache is None:
+        with _singleton_lock:
+            if _intent_cache is None:
+                _intent_cache = IntentCache()
+    return _intent_cache
+
+
+def reset_intent_cache() -> None:
+    """重置单例，便于测试切换配置。"""
+    global _intent_cache
+    with _singleton_lock:
+        _intent_cache = None
+
+
 def get_concurrency_optimizer() -> ConcurrencyOptimizer:
     """获取 ConcurrencyOptimizer 单例。"""
     global _concurrency_optimizer
@@ -630,6 +816,26 @@ def reset_concurrency_optimizer() -> None:
 # ----------------------------------------------------------------------
 # 性能指标聚合
 # ----------------------------------------------------------------------
+def _percentile(values: List[float], p: float) -> float:
+    """计算分位数（线性插值法），空列表返回 0.0。
+
+    p 取 0-1 之间，如 0.95 表示 P95。
+    使用线性插值保证小样本下分位数稳定，避免阶跃抖动。
+    """
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    # 线性插值：k 为浮点索引，f 为整数下界，c 为上界
+    k = (len(sorted_values) - 1) * p
+    f = int(k)
+    c = min(f + 1, len(sorted_values) - 1)
+    if f == c:
+        return sorted_values[f]
+    return sorted_values[f] + (sorted_values[c] - sorted_values[f]) * (k - f)
+
+
 def get_performance_metrics() -> PerformanceMetrics:
     """聚合三个组件统计，返回 PerformanceMetrics。
 
@@ -656,10 +862,25 @@ def get_performance_metrics() -> PerformanceMetrics:
         small_model_ratio=routing_dict["small_model_ratio"],
         per_model=per_model,
     )
+
+    # 聚合流式首 Token 耗时：从 Monitor 的 trace steps 中提取
+    # 延迟导入避免循环依赖（monitor 不应在模块加载阶段被引入）
+    from app.core.monitor import get_monitor
+
+    first_token_durations = get_monitor().get_stream_first_token_durations()
+    first_token_avg = (
+        sum(first_token_durations) / len(first_token_durations)
+        if first_token_durations
+        else 0.0
+    )
+    first_token_p95 = _percentile(first_token_durations, 0.95)
+
     return PerformanceMetrics(
         cache=cache_stats,
         concurrency=concurrency_stats,
         model_routing=routing_stats,
         avg_response_ms=round(optimizer.get_avg_response_ms(), 2),
         total_response_samples=optimizer.get_response_sample_count(),
+        stream_first_token_ms_avg=round(first_token_avg, 2),
+        stream_first_token_ms_p95=round(first_token_p95, 2),
     )

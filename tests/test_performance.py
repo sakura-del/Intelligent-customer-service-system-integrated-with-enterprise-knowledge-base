@@ -64,14 +64,20 @@ class FailingLLMClient:
 def _reset_performance_singletons():
     """模块级隔离：重置性能三件套单例。
 
-    注意：不在此处 reset_llm_client()，避免破坏其他测试模块对 LLMClient 单例的依赖。
-    LLMClient 的保存/恢复由 _preserve_llm_client 按用例处理。
+    强制 SMALL_LLM_API_KEY="" 避免 .env 配置真实千问 key 时
+    get_small_llm_client() 延迟初始化为真实客户端，导致测试注入的 fake 失效。
     """
+    from app.core.config import get_settings
     from app.core.performance import (
         reset_concurrency_optimizer,
         reset_hot_query_cache,
         reset_model_router,
     )
+
+    settings = get_settings()
+    original_small_key = settings.SMALL_LLM_API_KEY
+    # 强制小模型不可用，保证测试注入的 fake 不被延迟初始化覆盖
+    settings.SMALL_LLM_API_KEY = ""
 
     reset_model_router()
     reset_hot_query_cache()
@@ -79,6 +85,7 @@ def _reset_performance_singletons():
 
     yield
 
+    settings.SMALL_LLM_API_KEY = original_small_key
     reset_model_router()
     reset_hot_query_cache()
     reset_concurrency_optimizer()
@@ -98,8 +105,9 @@ def _reset_stats_per_test():
         get_model_router,
     )
 
-    # 保存 LLMClient 单例引用，用例结束后恢复，避免 fake 泄漏到其他模块
+    # 保存 LLMClient 单例引用，用例结束后恢复，避免 fake 泄漏到其他测试模块
     saved_llm_client = llm_client_module._llm_client
+    saved_small_llm_client = llm_client_module._small_llm_client
 
     get_model_router().reset_stats()
     get_hot_query_cache().reset_stats()
@@ -111,6 +119,7 @@ def _reset_stats_per_test():
 
     # 恢复 LLMClient 单例，确保不污染后续测试模块
     llm_client_module._llm_client = saved_llm_client
+    llm_client_module._small_llm_client = saved_small_llm_client
 
 
 @pytest.fixture

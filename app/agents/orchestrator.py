@@ -216,9 +216,11 @@ class OrchestratorAgent:
     def _recognize_intent(self, query: str) -> IntentResult:
         """意图识别分发：mock 模式走关键词规则，真实模式走 LLM。
 
-        性能优化：闲聊/问候/感谢等高频简单查询先用关键词快通道识别，
-        跳过 LLM 调用降低响应时间。未命中关键词再走 LLM。
-        LLM 返回解析失败时降级到关键词规则，保证链路不中断。
+        性能优化：
+        1. 闲聊/问候/感谢等高频简单查询先用关键词快通道识别，跳过 LLM 调用
+        2. LLM 模式下优先查 IntentCache，命中跳过 LLM 调用，首 Token 降至 ~800ms
+        3. 未命中缓存时走 ModelRouter 路由到小模型（豆包/千问），首 Token 降至 ~1s
+        4. LLM 返回解析失败时降级到关键词规则，保证链路不中断
         """
         # 快通道：闲聊关键词命中直接返回，省一次 LLM 调用
         quick = self._try_quick_intent(query)
@@ -226,7 +228,32 @@ class OrchestratorAgent:
             return quick
         if self.llm_client.is_mock:
             return self._keyword_based_intent(query)
-        return self._llm_based_intent(query)
+        # IntentCache 命中：跳过 LLM 意图识别，把首 Token 从 2.7s 降到 ~800ms
+        # 意图稳定（同一 query 的意图通常不变），TTL 30 分钟内复用安全
+        try:
+            from app.core.performance import get_intent_cache
+
+            cached_intent = get_intent_cache().get(query)
+            if cached_intent is not None:
+                logger.info("意图缓存命中，跳过 LLM 意图识别：%r", query[:50])
+                return cached_intent
+        except Exception as exc:
+            # 缓存读取失败不阻断主链路，正常走 LLM
+            logger.warning("意图缓存读取失败，降级到 LLM 意图识别：%s", exc)
+
+        intent_result = self._llm_based_intent(query)
+
+        # 写入 IntentCache：仅缓存置信度较高的结果，避免低质意图被复用
+        # confidence >= 0.7 视为高置信，可安全缓存
+        try:
+            from app.core.performance import get_intent_cache
+
+            if intent_result.confidence >= 0.7:
+                get_intent_cache().set(query, intent_result)
+        except Exception as exc:
+            logger.warning("意图缓存写入失败，不影响主链路：%s", exc)
+
+        return intent_result
 
     def _try_quick_intent(self, query: str) -> Optional[IntentResult]:
         """关键词快通道：闲聊/转人工等高频意图直接识别，跳过 LLM。
@@ -263,6 +290,11 @@ class OrchestratorAgent:
     def _llm_based_intent(self, query: str) -> IntentResult:
         """用 LLM 做结构化意图识别。
 
+        走 ModelRouter 路由：简单查询走小模型（豆包/千问），首 Token ~1s；
+        复杂查询走大模型（DeepSeek），保质量。
+        未配置小模型（small_client 为 None）时直接用主 LLM，避免 model 切换
+        导致不同 Provider 间模型名不兼容（如 DeepSeek 不支持 gpt-4o-mini）。
+
         要求 LLM 返回 JSON，解析失败时降级到关键词规则，
         避免模型偶发输出格式错误导致整个调度链路崩溃。
         """
@@ -270,7 +302,24 @@ class OrchestratorAgent:
             {"role": "system", "content": INTENT_SYSTEM_PROMPT},
             {"role": "user", "content": query},
         ]
-        raw = self.llm_client.chat(messages, temperature=0.0)
+        # ModelRouter 双 Provider 路由：仅在小模型可用时走路由
+        # small_client 不可用时直接用 self.llm_client，避免 model 切换不兼容
+        try:
+            from app.agents.llm_client import get_small_llm_client
+            from app.core.performance import get_model_router
+
+            if get_small_llm_client() is not None:
+                raw = get_model_router().chat_with_routing(
+                    messages=messages,
+                    query=query,
+                    temperature=0.0,
+                )
+            else:
+                raw = self.llm_client.chat(messages, temperature=0.0)
+        except Exception as exc:
+            # ModelRouter 调用失败：降级到主 LLM 直接调用，保证可用
+            logger.warning("ModelRouter 调用失败，降级主 LLM 意图识别：%s", exc)
+            raw = self.llm_client.chat(messages, temperature=0.0)
         try:
             data = self._parse_intent_json(raw)
             return self._build_intent_result_from_dict(data, query)

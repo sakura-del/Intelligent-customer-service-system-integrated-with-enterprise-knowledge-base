@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "https://api.openai.com/v1"
     LLM_MODEL: str = "gpt-4o-mini"
 
+    # 小模型配置（意图识别等简单任务路由到此模型，降低首 Token 延迟）
+    # 默认豆包（OpenAI 兼容接口），对中文理解较好且延迟低
+    # 留空时 ModelRouter 自动降级到主 LLM，无副作用
+    SMALL_LLM_API_KEY: str = ""
+    SMALL_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    SMALL_LLM_MODEL: str = "doubao-lite-4k"
+    # 小模型路由阈值：复杂度评分低于该值走小模型（0-1）
+    SMALL_MODEL_THRESHOLD: float = 0.5
+
     # Embedding 模型配置：默认使用 BGE-large-zh，适合中文语义检索
     EMBEDDING_MODEL: str = "BAAI/bge-large-zh-v1.5"
 

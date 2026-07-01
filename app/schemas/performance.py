@@ -105,6 +105,12 @@ class PerformanceMetrics(BaseModel):
     total_response_samples: int = Field(
         0, description="响应时间采样总数"
     )
+    stream_first_token_ms_avg: float = Field(
+        0.0, description="流式对话首 Token 平均耗时，单位毫秒"
+    )
+    stream_first_token_ms_p95: float = Field(
+        0.0, description="流式对话首 Token P95 耗时，单位毫秒"
+    )
 
 
 class InvalidateResult(BaseModel):

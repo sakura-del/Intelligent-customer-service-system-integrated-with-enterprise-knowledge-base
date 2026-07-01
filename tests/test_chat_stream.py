@@ -60,6 +60,9 @@ def _isolate_chroma_and_singletons():
     from app.agents import (
         rag_agent as rag_agent_module,
     )
+    from app.core import (
+        monitor as monitor_module,
+    )
     from app.core.config import get_settings
     from app.core.session import session_manager
     from app.knowledge import (
@@ -72,9 +75,12 @@ def _isolate_chroma_and_singletons():
     settings = get_settings()
     original_persist_dir = settings.CHROMA_PERSIST_DIR
     original_llm_key = settings.LLM_API_KEY
+    original_small_key = settings.SMALL_LLM_API_KEY
     settings.CHROMA_PERSIST_DIR = TEST_PERSIST_DIR
     # 强制 mock 模式：意图识别走关键词规则，避免真实 LLM 调用导致测试不稳定
     settings.LLM_API_KEY = ""
+    # 强制小模型不可用，避免 .env 配置真实 key 时延迟初始化为真实客户端
+    settings.SMALL_LLM_API_KEY = ""
 
     # 清理上次残留
     persist_path = Path(TEST_PERSIST_DIR)
@@ -91,12 +97,24 @@ def _isolate_chroma_and_singletons():
     dialog_agent_module.reset_dialog_agent()
     graph_module.reset_graph()
     session_manager.reset_all()
+    # 重置 monitor，避免其他模块的 trace 污染首 Token 指标断言
+    monitor_module.reset_monitor()
+    # 重置 HotQueryCache 与 IntentCache，避免其他模块或本模块前序用例
+    # 写入的缓存导致后续用例命中缓存跳过编排（如 error 用例需走 handle_stream）
+    from app.core.performance import (
+        reset_hot_query_cache,
+        reset_intent_cache,
+    )
+
+    reset_hot_query_cache()
+    reset_intent_cache()
 
     yield
 
     # 恢复配置并清理
     settings.CHROMA_PERSIST_DIR = original_persist_dir
     settings.LLM_API_KEY = original_llm_key
+    settings.SMALL_LLM_API_KEY = original_small_key
     vectorstore_module.reset_vector_store()
     retriever_module.reset_retriever()
     rag_agent_module.reset_rag_agent()
@@ -106,6 +124,32 @@ def _isolate_chroma_and_singletons():
     dialog_agent_module.reset_dialog_agent()
     graph_module.reset_graph()
     session_manager.reset_all()
+    monitor_module.reset_monitor()
+    # 重置 HotQueryCache 与 IntentCache，避免本模块前序用例写入的缓存
+    # 导致后续用例命中缓存跳过编排（如 error 用例需走 handle_stream）
+    from app.core.performance import (
+        reset_hot_query_cache,
+        reset_intent_cache,
+    )
+
+    reset_hot_query_cache()
+    reset_intent_cache()
+
+
+@pytest.fixture(autouse=True)
+def _reset_caches_per_test():
+    """每个用例前重置 HotQueryCache 与 IntentCache，避免用例间互相污染。
+
+    knowledge_qa 用例会写入 HotQueryCache，若不重置，后续相同 query 的用例
+    会命中缓存跳过编排，导致 error/escalation 等用例无法触发目标路径。
+    """
+    from app.core.performance import get_hot_query_cache, get_intent_cache
+
+    get_hot_query_cache().reset_stats()
+    get_intent_cache().reset_stats()
+    yield
+    get_hot_query_cache().reset_stats()
+    get_intent_cache().reset_stats()
 
 
 def _parse_sse_events(text: str) -> List[Dict[str, Any]]:
@@ -428,3 +472,99 @@ def test_stream_llm_error_event_propagated():
     error_events = [e for e in events if e["event"] == "error"]
     assert len(error_events) == 1
     assert "LLM 调用失败" in error_events[0]["data"]["message"]
+
+
+def test_stream_chitchat_uses_quick_intent_fast_first_token():
+    """闲聊快通道：命中关键词时跳过 _recognize_intent，meta 快速到达。
+
+    验证 Task 1：_try_quick_intent 命中闲聊关键词时，
+    _run_stream_pipeline 不再调用 _recognize_intent，
+    meta 事件在 200ms 内到达（mock 模式下应远低于此阈值）。
+    """
+    import time as time_module
+
+    from app.agents.orchestrator import OrchestratorAgent
+
+    # 用 mock 替换 _recognize_intent：若被调用说明快通道未命中
+    # mock 默认返回 MagicMock，后续 intent_result.intent.value 会失败，
+    # 但测试主要断言 assert_not_called，失败时给出清晰错误
+    with patch.object(OrchestratorAgent, "_recognize_intent") as mock_recognize:
+        client = TestClient(app)
+        start = time_module.perf_counter()
+        with client.stream(
+            "POST",
+            "/api/v1/chat/stream",
+            json={"message": "你好"},
+        ) as response:
+            assert response.status_code == 200
+            text = response.read().decode("utf-8")
+        elapsed_ms = (time_module.perf_counter() - start) * 1000
+
+    events = _parse_sse_events(text)
+    # 快通道命中：_recognize_intent 不应被调用
+    mock_recognize.assert_not_called()
+    # meta 应快速到达（< 200ms，mock 模式无 LLM 调用应远低于阈值）
+    assert elapsed_ms < 200, f"首事件应在 200ms 内到达，实际 {elapsed_ms:.0f}ms"
+    # 意图应为 chitchat（由 _try_quick_intent 直接返回）
+    meta = next(e for e in events if e["event"] == "meta")
+    assert meta["data"]["intent"] == "chitchat"
+
+
+def test_stream_chitchat_emits_multiple_tokens():
+    """闲聊流式响应：token 事件数 > 1，验证切片吐出。
+
+    验证 Task 2：_stream_non_knowledge 按句末标点/字符切片，
+    把完整回复拆成多个 token 事件，而非单 token 输出。
+    """
+    client = TestClient(app)
+    with client.stream(
+        "POST",
+        "/api/v1/chat/stream",
+        json={"message": "你好"},
+    ) as response:
+        assert response.status_code == 200
+        text = response.read().decode("utf-8")
+
+    events = _parse_sse_events(text)
+    token_events = [e for e in events if e["event"] == "token"]
+    # 切片后应有多个 token 事件
+    assert len(token_events) > 1, (
+        f"闲聊流式应切片吐出多个 token，实际 {len(token_events)} 个"
+    )
+    # 所有 token 拼接应等于完整回复
+    done = next(e for e in events if e["event"] == "done")
+    full_reply = done["data"]["answer"]
+    concatenated = "".join(e["data"]["content"] for e in token_events)
+    assert concatenated == full_reply, "切片 token 拼接应等于完整回复"
+
+
+def test_stream_first_token_metric_recorded():
+    """流式请求后查询 metrics，断言首 Token 指标存在且非负。
+
+    验证 Task 3：_stream_generator 在首个事件 yield 前记录 stream_first_token，
+    performance metrics 接口聚合返回 stream_first_token_ms_avg/p95。
+    """
+    client = TestClient(app)
+    # 先发一个流式请求触发首 Token 埋点
+    with client.stream(
+        "POST",
+        "/api/v1/chat/stream",
+        json={"message": "你好"},
+    ) as response:
+        assert response.status_code == 200
+        response.read()  # 消费完整流，确保生成器执行完毕
+
+    # 查询性能指标
+    resp = client.get("/api/v1/performance/metrics")
+    assert resp.status_code == 200
+    metrics = resp.json()["metrics"]
+    # 首 Token 指标字段应存在
+    assert "stream_first_token_ms_avg" in metrics
+    assert "stream_first_token_ms_p95" in metrics
+    # 指标值应非负（至少有一条 stream_first_token 记录）
+    assert metrics["stream_first_token_ms_avg"] >= 0, (
+        f"stream_first_token_ms_avg 应非负，实际 {metrics['stream_first_token_ms_avg']}"
+    )
+    assert metrics["stream_first_token_ms_p95"] >= 0, (
+        f"stream_first_token_ms_p95 应非负，实际 {metrics['stream_first_token_ms_p95']}"
+    )

@@ -46,6 +46,118 @@
     }
 
     /**
+     * 轻量 Markdown 渲染：用正则实现最小子集，避免引入新依赖。
+     * 支持：代码块、行内代码、加粗、列表（无序/有序）、换行保留。
+     * XSS 防护：所有文本先经 HTML 实体转义，代码块内容强制转义。
+     * @param {string} text - 原始 markdown 文本
+     * @returns {string} 渲染后的 HTML 字符串
+     */
+    function renderMarkdown(text) {
+        if (!text) return "";
+
+        var parts = [];
+        // 代码块正则：```lang\n...```，全局匹配
+        var codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
+        var lastIndex = 0;
+        var match;
+
+        while ((match = codeBlockRegex.exec(text)) !== null) {
+            // 代码块之前的普通文本走行内渲染
+            if (match.index > lastIndex) {
+                parts.push(renderInlineMarkdown(text.slice(lastIndex, match.index)));
+            }
+            // 代码块内容强制转义，<pre> 标签保留换行
+            var langAttr = match[1] ? ' class="language-' + escapeHtml(match[1]) + '"' : "";
+            var codeContent = escapeHtml(match[2].replace(/\n$/, ""));
+            parts.push('<pre><code' + langAttr + '>' + codeContent + '</code></pre>');
+            lastIndex = codeBlockRegex.lastIndex;
+        }
+        // 末尾剩余普通文本
+        if (lastIndex < text.length) {
+            parts.push(renderInlineMarkdown(text.slice(lastIndex)));
+        }
+        return parts.join("");
+    }
+
+    /**
+     * 行内 Markdown 渲染：处理行内代码、加粗、列表、换行。
+     * 输入文本先整体转义，再按规则替换为标签，确保 XSS 安全。
+     * @param {string} text - 原始文本片段
+     * @returns {string} 行内渲染后的 HTML 字符串
+     */
+    function renderInlineMarkdown(text) {
+        if (!text) return "";
+
+        // 先转义 HTML 实体（防 XSS）
+        text = escapeHtml(text);
+
+        // 行内代码：用占位符替换，避免内部内容被其他规则二次处理
+        var codeSpans = [];
+        text = text.replace(/`([^`]+)`/g, function (m, code) {
+            codeSpans.push('<code>' + code + '</code>');
+            return '\u0000CODE' + (codeSpans.length - 1) + '\u0000';
+        });
+
+        // 加粗 **...**
+        text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+        // 按行处理列表与换行
+        var lines = text.split('\n');
+        var html = [];
+        var inList = false;
+        var listType = null;
+
+        // 关闭当前列表（类型切换或遇到非列表行时调用）
+        function closeList() {
+            if (inList) {
+                html.push('</' + listType + '>');
+                inList = false;
+                listType = null;
+            }
+        }
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            var ulMatch = line.match(/^\s*[-*]\s+(.*)$/);
+            var olMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+
+            if (ulMatch) {
+                if (!inList || listType !== 'ul') {
+                    closeList();
+                    html.push('<ul>');
+                    inList = true;
+                    listType = 'ul';
+                }
+                html.push('<li>' + ulMatch[1] + '</li>');
+            } else if (olMatch) {
+                if (!inList || listType !== 'ol') {
+                    closeList();
+                    html.push('<ol>');
+                    inList = true;
+                    listType = 'ol';
+                }
+                html.push('<li>' + olMatch[1] + '</li>');
+            } else {
+                closeList();
+                if (line.trim() === '') continue;  // 空行跳过，避免多余 <br>
+                html.push(line + '<br>');
+            }
+        }
+        closeList();
+
+        text = html.join('');
+
+        // 还原行内代码占位符
+        text = text.replace(/\u0000CODE(\d+)\u0000/g, function (m, idx) {
+            return codeSpans[parseInt(idx, 10)];
+        });
+
+        // 移除末尾多余 <br>
+        text = text.replace(/(<br>)+$/, '');
+        return text;
+    }
+
+    /**
      * 创建带属性的元素，简化批量构建 DOM 的代码。
      */
     function createElement(tag, className, textContent) {
@@ -347,6 +459,14 @@
         // done 事件也可能携带 session_id（防御性保存）
         if (data && data.session_id) sessionId = data.session_id;
 
+        // done 后全量 markdown 渲染：取出流式阶段累积的纯文本，替换为格式化 HTML
+        // 避免流式阶段反复解析 markdown 导致闪烁
+        var rawText = ctx.textNode ? ctx.textNode.data : "";
+        if (rawText) {
+            var textSpan = bubble.querySelector(".bubble__text");
+            if (textSpan) textSpan.innerHTML = renderMarkdown(rawText);
+        }
+
         // 转人工提示
         if (data && data.escalate) {
             var escalateTip = createElement("div", "stream-meta__escalate");
@@ -448,7 +568,7 @@
      * @param {HTMLElement} typingRow - 加载动画行
      * @returns {Promise<void>}
      */
-    function sendStreamMessage(message, channel, apiKey, typingRow) {
+    function sendStreamMessage(message, channel, apiKey, typingRow, existingCtx) {
         var headers = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream"
@@ -471,37 +591,55 @@
             if (!response.body) {
                 throw new Error("流式响应无可读体");
             }
-            return consumeSSEStream(response.body, typingRow);
+            // 构造重连信息：流式中途断线时由 consumeSSEStream 触发一次重连
+            var retryInfo = { message: message, channel: channel, apiKey: apiKey };
+            // existingCtx 用于重连时复用气泡，首次调用时不传（undefined）
+            return consumeSSEStream(response.body, typingRow, retryInfo, existingCtx);
         });
     }
 
     /**
      * 消费 SSE 流：逐块读取、解析、分发渲染。
      * 流式初始化阶段（未渲染任何内容）异常时抛出，触发降级；
-     * 已开始渲染后异常则保留已有内容并追加错误提示，不再降级。
+     * 已开始渲染后异常则保留已有内容并追加错误提示，不再降级；
+     * 流式中途断线（已开始但未完成）且未重连过时，触发一次自动重连。
      * @param {ReadableStream} body - fetch 响应体
      * @param {HTMLElement} typingRow - 加载动画行
+     * @param {Object} [retryInfo] - 重连所需参数 {message, channel, apiKey}
+     * @param {Object} [existingCtx] - 重连时复用的流式上下文（首次调用不传）
      * @returns {Promise<void>}
      */
-    function consumeSSEStream(body, typingRow) {
+    function consumeSSEStream(body, typingRow, retryInfo, existingCtx) {
         var reader = body.getReader();
         var decoder = new TextDecoder();
         var buffer = "";
 
         // 流式渲染上下文：跨事件共享状态
-        var ctx = {
-            started: false,        // 是否已开始渲染（收到首个 token/meta/error）
-            finished: false,       // 是否已完成（done/error）
-            metaRendered: false,   // meta 是否已渲染（防重复）
-            bubble: null,          // 当前消息气泡元素
-            row: null,             // 当前消息行元素（用于异常时移除空气泡）
-            textNode: null         // token 文本节点引用，便于高效追加
-        };
-
-        // 创建消息气泡（占位，等待 meta/token 填充）
-        var parts = createMessageRow("bot");
-        ctx.bubble = parts.bubble;
-        ctx.row = parts.row;
+        // 重连场景复用 existingCtx，避免创建新气泡
+        var ctx;
+        if (existingCtx) {
+            ctx = existingCtx;
+            // 重连：清空当前气泡已渲染内容，从头接收（避免复杂去重逻辑）
+            if (ctx.bubble) ctx.bubble.innerHTML = "";
+            ctx.started = false;
+            ctx.finished = false;
+            ctx.metaRendered = false;
+            ctx.textNode = null;
+        } else {
+            ctx = {
+                started: false,        // 是否已开始渲染（收到首个 token/meta/error）
+                finished: false,       // 是否已完成（done/error）
+                metaRendered: false,   // meta 是否已渲染（防重复）
+                retried: false,        // 是否已触发过断线重连（限制仅重连一次，防死循环）
+                bubble: null,          // 当前消息气泡元素
+                row: null,             // 当前消息行元素（用于异常时移除空气泡）
+                textNode: null         // token 文本节点引用，便于高效追加
+            };
+            // 创建消息气泡（占位，等待 meta/token 填充）
+            var parts = createMessageRow("bot");
+            ctx.bubble = parts.bubble;
+            ctx.row = parts.row;
+        }
 
         /**
          * 递归读取下一块并处理，直到流结束。
@@ -544,12 +682,30 @@
         }
 
         return pump().catch(function (err) {
-            // reader.read 异常：清理状态后判断是否可降级
+            // reader.read 异常：清理状态后判断是否可降级或重连
             if (typingRow && typingRow.parentNode) {
                 messageList.removeChild(typingRow);
             }
             if (ctx.bubble) {
                 ctx.bubble.classList.remove("is-typing");
+            }
+
+            // 流式中途断线（已开始未完成）且未重连过：触发一次重连，从头接收
+            // 重连策略简化：清空当前气泡已渲染内容重新渲染，避免复杂去重
+            if (ctx.started && !ctx.finished && !ctx.retried && retryInfo) {
+                ctx.retried = true;  // 标记已重连，防止死循环
+                // 重连复用当前气泡，typingRow 已移除传 null
+                return sendStreamMessage(
+                    retryInfo.message, retryInfo.channel, retryInfo.apiKey, null, ctx
+                ).catch(function () {
+                    // 重连失败：保留已渲染内容，追加中断提示，不移除气泡
+                    if (ctx.bubble) {
+                        ctx.bubble.classList.remove("is-typing");
+                        var tip = createElement("div", "stream-error");
+                        tip.textContent = "连接中断，已显示部分回复";
+                        ctx.bubble.appendChild(tip);
+                    }
+                });
             }
 
             // 已开始渲染内容：保留已有内容，追加错误提示，不再降级（避免重复显示）
@@ -560,7 +716,17 @@
                 return;
             }
 
-            // 未开始渲染：移除空气泡，抛出错误触发上层降级到非流式
+            // 重连后仍未开始渲染就异常：不移除气泡，追加中断提示
+            if (ctx.retried) {
+                if (ctx.bubble) {
+                    var retryTip = createElement("div", "stream-error");
+                    retryTip.textContent = "连接中断，已显示部分回复";
+                    ctx.bubble.appendChild(retryTip);
+                }
+                return;
+            }
+
+            // 首次调用且未开始渲染：移除空气泡，抛出错误触发上层降级到非流式
             if (ctx.row && ctx.row.parentNode) {
                 messageList.removeChild(ctx.row);
             }

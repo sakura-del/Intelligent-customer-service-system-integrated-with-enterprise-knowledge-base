@@ -8,7 +8,9 @@
 仅最终生成阶段是否流式有所差异，保持多 Agent 协同逻辑一致。
 """
 import json
-from typing import Any, Dict, Generator
+import re
+import time
+from typing import Any, Dict, Generator, List
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -21,6 +23,7 @@ from app.agents.orchestrator import (
     get_orchestrator,
 )
 from app.core.logging import get_logger
+from app.core.monitor import get_monitor
 from app.core.security import verify_api_key
 from app.core.session import session_manager
 from app.schemas.chat import ChatRequest, ChatResponse
@@ -96,12 +99,40 @@ def _stream_generator(request: ChatRequest) -> Generator[bytes, None, None]:
 
     yield 格式：'event: <type>\\ndata: <json>\\n\\n'，符合 SSE 规范。
     异常时 yield error 事件后 return，保证流总能正常关闭。
+
+    在首个事件 yield 之前记录首 Token 耗时，便于性能监控聚合。
+    通过 start_trace 拿到 trace_id，让 record_step 能挂载到 trace 上，
+    performance.py 的 metrics 接口据此聚合 avg/p95。
     """
+    monitor = get_monitor()
+    start_time = time.perf_counter()
+    # 启动 trace 仅用于挂载 stream_first_token 步骤，trace_id 不能为空
+    # 否则 record_step 会静默跳过，导致 metrics 聚合无数据
+    trace_id = monitor.start_trace(
+        session_id=request.session_id or "", message=request.message
+    )
+    first_event_yielded = False
     try:
-        yield from _run_stream_pipeline(request)
+        for event in _run_stream_pipeline(request):
+            # 首个事件（meta 或 token）yield 前记录首 Token 耗时
+            # 后续事件不再记录，保证每条 trace 只有一个 stream_first_token
+            if not first_event_yielded:
+                first_token_ms = (time.perf_counter() - start_time) * 1000
+                monitor.record_step(
+                    trace_id,
+                    "stream_first_token",
+                    "request",
+                    f"{first_token_ms:.0f}ms",
+                    first_token_ms,
+                )
+                first_event_yielded = True
+            yield event
+        # 流正常结束：标记 trace 成功，避免长期停留在 running 状态
+        monitor.finish_trace(trace_id, status="success")
     except Exception as exc:
         # 兜底：未捕获异常也发 error 事件，避免前端无响应
         logger.exception("流式对话异常：%s", exc)
+        monitor.fail_trace(trace_id, str(exc))
         yield _format_sse("error", {"message": f"内部错误：{exc}"})
 
 
@@ -109,6 +140,10 @@ def _run_stream_pipeline(request: ChatRequest) -> Generator[bytes, None, None]:
     """执行流式编排主流程：会话 → 意图识别 → 路由 → 流式生成。
 
     拆分出来便于异常统一处理：本函数内任何异常都会被外层捕获并转 error 事件。
+
+    性能优化：入口检查 HotQueryCache，命中直接 yield meta + 切片 token + done，
+    跳过全部编排（意图识别+检索+生成），首 Token <100ms。
+    与 graph.py 同步端点共用 HotQueryCache 单例，重复查询任一端点都能命中。
     """
     # 1. 会话管理：复用或创建 session，记录用户消息
     session_id = session_manager.get_or_create(
@@ -120,10 +155,50 @@ def _run_stream_pipeline(request: ChatRequest) -> Generator[bytes, None, None]:
     turn_count = int(session.get("turn_count", 1))
     failed_attempts = int(session.get("failed_attempts", 0))
 
+    message = request.message
+
+    # 1.5 HotQueryCache 检查：命中直接 yield meta + 切片 token + done
+    # 与 graph.py 同步端点共用缓存，重复查询首 Token <100ms
+    # 失败不阻断主链路，正常走编排
+    try:
+        from app.core.performance import get_hot_query_cache
+
+        cached = get_hot_query_cache().get(message, session_context=None)
+        if cached is not None:
+            logger.info("流式热点缓存命中，跳过编排：query=%r", message[:50])
+            session_manager.append_history(session_id, "assistant", cached.answer)
+            # meta：含 intent=cached 与 sources，让前端展示来源
+            yield _format_sse(
+                "meta",
+                {"intent": "cached", "sources": list(cached.sources or [])},
+            )
+            # 切片流式吐出，让前端感受打字效果（首 Token <100ms）
+            for piece in _slice_reply_to_token_pieces(cached.answer):
+                yield _format_sse("token", {"content": piece})
+            yield _format_sse(
+                "done",
+                {
+                    "turn_count": turn_count,
+                    "escalate": False,
+                    "answer": cached.answer,
+                },
+            )
+            return
+    except Exception as exc:
+        logger.warning("流式热点缓存读取失败，降级到正常编排：%s", exc)
+
     # 2. 意图识别 + 情绪评分（复用 OrchestratorAgent 的能力）
     orchestrator = get_orchestrator()
-    message = request.message
-    intent_result = orchestrator._recognize_intent(message)
+
+    # 快通道：闲聊/转人工关键词命中时跳过 LLM 意图识别
+    # 让 meta 事件能在 LLM 调用之前 yield，把首 Token 控制在 200ms 内
+    # 未命中时回退到 _recognize_intent，行为与同步端点保持一致
+    quick_intent = orchestrator._try_quick_intent(message)
+    if quick_intent is not None:
+        intent_result = quick_intent
+    else:
+        intent_result = orchestrator._recognize_intent(message)
+
     emotion_score = orchestrator._estimate_emotion_score(message)
     if orchestrator._should_prioritize_emotion(intent_result, emotion_score):
         intent_result = orchestrator._override_to_emotion(
@@ -260,6 +335,20 @@ def _stream_knowledge_qa(
                 emotion_score=max(0.0, min(1.0, 1.0 - emotion_score / 5.0)),
             )
             session_manager.append_history(session_id, "assistant", final_answer)
+            # 写入 HotQueryCache：仅缓存命中且解决的结果，与 graph.py 一致
+            # 后续相同 query 命中缓存首 Token <100ms
+            if is_resolved:
+                try:
+                    from app.core.performance import get_hot_query_cache
+
+                    get_hot_query_cache().set(
+                        message,
+                        final_answer,
+                        sources=sources,
+                        session_context=None,
+                    )
+                except Exception as exc:
+                    logger.warning("流式热点缓存写入失败，不影响主链路：%s", exc)
             yield _format_sse(
                 "done",
                 {
@@ -279,11 +368,11 @@ def _stream_non_knowledge(
     failed_attempts: int,
     emotion_score: int,
 ) -> Generator[bytes, None, None]:
-    """非知识问答意图：非流式收集完整结果，作为 meta 后单 token 输出。
+    """非知识问答意图：收集完整结果后按句末标点切片流式输出。
 
     business_query / emotion_sensitive / ticket / chitchat 等意图
     用 OrchestratorAgent 的 handler 同步生成完整回复，
-    再以单 token 形式放入流，保持 SSE 协议一致性。
+    再按句末标点切片逐片 yield token，让前端感受到打字效果。
     """
     orchestrator = get_orchestrator()
     intent_value = intent_result.intent.value
@@ -297,7 +386,7 @@ def _stream_non_knowledge(
     is_resolved = orchestrator._is_resolved(intent_result, sub_tasks)
     new_failed = 0 if is_resolved else failed_attempts + 1
 
-    # 3. 发 meta（含完整回复作为 preview）+ token + done
+    # 3. 发 meta（含完整回复作为 preview，便于前端首屏渲染）
     yield _format_sse(
         "meta",
         {
@@ -306,8 +395,11 @@ def _stream_non_knowledge(
             "answer": reply,
         },
     )
-    # 把完整回复作为单 token 发出，让前端能复用 token 渲染逻辑
-    yield _format_sse("token", {"content": reply})
+
+    # 4. 按句末标点切片流式 yield token，模拟打字效果
+    # 替代原来"完整回复作为单 token"的做法，让前端能逐句渲染
+    for piece in _slice_reply_to_token_pieces(reply):
+        yield _format_sse("token", {"content": piece})
 
     session_manager.update_session(
         session_id,
@@ -321,6 +413,32 @@ def _stream_non_knowledge(
         "done",
         {"turn_count": turn_count, "escalate": False, "answer": reply},
     )
+
+
+# 句末标点切分正则：在 。！？!?\n 之后切分，标点保留在前一段末尾
+# 用 lookbehind 避免标点单独成片，影响阅读体验
+_SENTENCE_END_SPLIT = re.compile(r"(?<=[。！？!?\n])")
+# 单句回复回退切片大小：句末标点切片仅 1 片时按字符数二次切片
+# 选取 4 字符兼顾打字效果与传输效率，过小会产生过多 SSE 事件
+_FALLBACK_CHUNK_SIZE = 4
+
+
+def _slice_reply_to_token_pieces(reply: str) -> List[str]:
+    """按句末标点切片回复文本，用于模拟流式打字效果。
+
+    先按句末标点（。！？!?\n）切片；若仅 1 片（单句回复），
+    再按字符数二次切片，保证短句也能流式吐出多个 token。
+    """
+    if not reply:
+        return []
+    pieces = [p for p in _SENTENCE_END_SPLIT.split(reply) if p]
+    # 单句回复按字符回退切片，避免只有 1 个 token 无法体现流式效果
+    if len(pieces) <= 1:
+        pieces = [
+            reply[i : i + _FALLBACK_CHUNK_SIZE]
+            for i in range(0, len(reply), _FALLBACK_CHUNK_SIZE)
+        ]
+    return pieces
 
 
 def _format_sse(event: str, data: Dict[str, Any]) -> bytes:
