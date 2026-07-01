@@ -393,6 +393,22 @@ class Monitor:
             "active_sessions": sessions_count,
         }
 
+    def get_stream_first_token_durations(self) -> List[float]:
+        """返回所有 trace 中 stream_first_token 步骤的耗时列表（毫秒）。
+
+        每条 trace 最多取一次首 Token 耗时（break），
+        供 performance.py 聚合 avg/p95，避免多次记录导致统计偏置。
+        """
+        durations: List[float] = []
+        with self._lock:
+            for trace in self._traces:
+                # 每条 trace 只取首个 stream_first_token 步骤
+                for step in trace.get("steps", []):
+                    if step.get("node") == "stream_first_token":
+                        durations.append(float(step.get("duration_ms", 0.0)))
+                        break
+        return durations
+
     # ------------------------------------------------------------------
     # 维护与测试辅助
     # ------------------------------------------------------------------
