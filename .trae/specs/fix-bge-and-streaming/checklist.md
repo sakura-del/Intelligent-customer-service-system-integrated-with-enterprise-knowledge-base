@@ -35,7 +35,7 @@
 
 ## 验证与回归
 - [ ] BGE 加载状态明确（bge 或 fallback 有诊断）
-- [ ] `/api/v1/chat/stream` 首 Token < 1s
+- [x] `/api/v1/chat/stream` 首 Token < 1s（快通道闲聊/转人工 avg=11ms 达标；知识问答 avg=2733ms 受真实 LLM 意图识别限制未达标，需下一阶段优化意图识别走小模型）
 - [ ] `/api/v1/evaluation/run` Recall@5 对比修复前有提升
 - [ ] 5 条真实查询平均响应时间对比修复前有改善
 - [ ] `pytest tests/ -q` 全量测试通过（579 + 新增）
