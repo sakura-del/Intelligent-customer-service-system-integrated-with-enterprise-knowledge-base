@@ -475,3 +475,33 @@ body {
         padding: 0 14px;
     }
 }
+
+/* ===== 移动端流式体验适配（<=640px） ===== */
+@media (max-width: 640px) {
+    /* 消息列表横向不溢出，避免流式长内容/代码块触发横向滚动条 */
+    .messages {
+        overflow-x: hidden;
+    }
+
+    /* 气泡 padding 缩小，腾出更多内容空间 */
+    .bubble {
+        padding: 8px 10px;
+    }
+
+    /* 流式 meta 徽章换行，避免小屏挤压 */
+    .stream-meta {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    /* 徽章字号与 padding 缩小 */
+    .stream-meta__badge {
+        font-size: 11px;
+        padding: 1px 6px;
+    }
+
+    /* 打字光标位置修正：缩小左间距，避免遮挡文本末尾 */
+    .bubble.is-typing::after {
+        margin-left: 1px;
+    }
+}
