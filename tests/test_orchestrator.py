@@ -92,7 +92,13 @@ def _isolate_chroma_and_ingest():
     settings = get_settings()
     original_persist_dir = settings.CHROMA_PERSIST_DIR
     original_threshold = settings.SIMILARITY_THRESHOLD
+    original_llm_key = settings.LLM_API_KEY
+    original_small_key = settings.SMALL_LLM_API_KEY
     settings.CHROMA_PERSIST_DIR = TEST_PERSIST_DIR
+    # 强制 mock 模式与小模型不可用，避免 .env 配置真实 key 时
+    # _llm_based_intent 走 ModelRouter 调用真实千问，导致 fake LLM 注入失效
+    settings.LLM_API_KEY = ""
+    settings.SMALL_LLM_API_KEY = ""
 
     # 清理上次测试残留，保证入库从零开始
     persist_path = Path(TEST_PERSIST_DIR)
@@ -128,6 +134,8 @@ def _isolate_chroma_and_ingest():
     # 恢复配置并清理单例，避免影响后续测试
     settings.CHROMA_PERSIST_DIR = original_persist_dir
     settings.SIMILARITY_THRESHOLD = original_threshold
+    settings.LLM_API_KEY = original_llm_key
+    settings.SMALL_LLM_API_KEY = original_small_key
     vectorstore_module.reset_vector_store()
     retriever_module.reset_retriever()
 
@@ -137,6 +145,7 @@ def _isolate_chroma_and_ingest():
 
     rag_agent_module.reset_rag_agent()
     llm_client_module.reset_llm_client()
+    llm_client_module.reset_small_llm_client()
 
 
 @pytest.fixture(autouse=True)
