@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     # 小模型路由阈值：复杂度评分低于该值走小模型（0-1）
     SMALL_MODEL_THRESHOLD: float = 0.5
 
+    # ===== Langfuse 可观测性配置 =====
+    # Langfuse 公钥：在 Project Settings → API Keys 创建，留空时降级为 no-op
+    LANGFUSE_PUBLIC_KEY: str = ""
+    # Langfuse 私钥：与公钥配对使用，注意保密，勿提交到代码仓库
+    LANGFUSE_SECRET_KEY: str = ""
+    # Langfuse 服务地址：默认云版，自建部署时改为本地实例地址
+    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    # 是否启用 Langfuse：False 时全部降级为 no-op，不影响主链路
+    LANGFUSE_ENABLED: bool = False
+
     # Embedding 模型配置：默认使用 BGE-large-zh，适合中文语义检索
     EMBEDDING_MODEL: str = "BAAI/bge-large-zh-v1.5"
 
