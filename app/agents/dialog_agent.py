@@ -209,7 +209,13 @@ class DialogAgent:
             {"role": "user", "content": user_content},
         ]
         try:
-            reply = self.llm_client.chat(messages=messages, temperature=0.4)
+            # name/metadata 标记 prompt name=dialog_polish，便于 Langfuse 聚合分析
+            reply = self.llm_client.chat(
+                messages=messages,
+                temperature=0.4,
+                name="dialog_polish",
+                metadata={"prompt_version": "v1"},
+            )
             # LLM 返回空时降级到规则拼装，保证有输出
             if not reply or not reply.strip():
                 logger.warning("LLM 返回空回复，降级到规则拼装")

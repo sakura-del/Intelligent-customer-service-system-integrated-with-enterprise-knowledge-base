@@ -304,6 +304,7 @@ class OrchestratorAgent:
         ]
         # ModelRouter 双 Provider 路由：仅在小模型可用时走路由
         # small_client 不可用时直接用 self.llm_client，避免 model 切换不兼容
+        # name/metadata 标记 prompt name=intent_recognition，便于 Langfuse 聚合
         try:
             from app.agents.llm_client import get_small_llm_client
             from app.core.performance import get_model_router
@@ -313,13 +314,25 @@ class OrchestratorAgent:
                     messages=messages,
                     query=query,
                     temperature=0.0,
+                    name="intent_recognition",
+                    metadata={"prompt_version": "v1"},
                 )
             else:
-                raw = self.llm_client.chat(messages, temperature=0.0)
+                raw = self.llm_client.chat(
+                    messages,
+                    temperature=0.0,
+                    name="intent_recognition",
+                    metadata={"prompt_version": "v1"},
+                )
         except Exception as exc:
             # ModelRouter 调用失败：降级到主 LLM 直接调用，保证可用
             logger.warning("ModelRouter 调用失败，降级主 LLM 意图识别：%s", exc)
-            raw = self.llm_client.chat(messages, temperature=0.0)
+            raw = self.llm_client.chat(
+                messages,
+                temperature=0.0,
+                name="intent_recognition",
+                metadata={"prompt_version": "v1"},
+            )
         try:
             data = self._parse_intent_json(raw)
             return self._build_intent_result_from_dict(data, query)

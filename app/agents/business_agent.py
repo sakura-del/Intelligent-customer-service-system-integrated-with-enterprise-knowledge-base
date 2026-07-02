@@ -430,7 +430,13 @@ class BusinessAgent:
             {"role": "system", "content": _EXTRACT_SYSTEM_PROMPT},
             {"role": "user", "content": _EXTRACT_USER_PROMPT.format(query=query)},
         ]
-        raw = self.llm_client.chat(messages, temperature=0.0)
+        # name 用于标识业务参数提取 prompt，metadata 记录 prompt 版本便于追踪
+        raw = self.llm_client.chat(
+            messages,
+            temperature=0.0,
+            name="business_extract",
+            metadata={"prompt_version": "v1"},
+        )
         return self._parse_json(raw)
 
     @staticmethod
@@ -802,7 +808,13 @@ class BusinessAgent:
             {"role": "system", "content": _FORMAT_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
-        reply = self.llm_client.chat(messages, temperature=0.3)
+        # name 用于标识业务回复格式化 prompt，metadata 记录 prompt 版本便于追踪
+        reply = self.llm_client.chat(
+            messages,
+            temperature=0.3,
+            name="business_format",
+            metadata={"prompt_version": "v1"},
+        )
         reply = reply.strip()
         # LLM 返回空时降级模板，保证总有可读回复
         return reply or self._format_by_template(scene, data, params)

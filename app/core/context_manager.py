@@ -279,7 +279,13 @@ class ContextManager:
             {"role": "user", "content": text},
         ]
         try:
-            reply = self.llm_client.chat(messages=messages, temperature=0.0)
+            # name 标识单轮摘要 prompt，metadata 记录 prompt 版本
+            reply = self.llm_client.chat(
+                messages=messages,
+                temperature=0.0,
+                name="turn_summary",
+                metadata={"prompt_version": "v1"},
+            )
             if reply and reply.strip():
                 return reply.strip()
             logger.warning("LLM 单轮摘要返回空，降级规则")
@@ -297,7 +303,13 @@ class ContextManager:
             {"role": "user", "content": text},
         ]
         try:
-            reply = self.llm_client.chat(messages=messages, temperature=0.0)
+            # name 标识会话级摘要 prompt
+            reply = self.llm_client.chat(
+                messages=messages,
+                temperature=0.0,
+                name="session_summary",
+                metadata={"prompt_version": "v1"},
+            )
             if reply and reply.strip():
                 return reply.strip()
             logger.warning("LLM 会话摘要返回空，降级规则")

@@ -214,6 +214,8 @@ class ModelRouter:
         *,
         query: str,
         model_override: Optional[str] = None,
+        name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> str:
         """根据 query 路由到合适模型并调用 LLMClient 生成回复。
@@ -225,6 +227,9 @@ class ModelRouter:
         - 路由到大模型：用主 client
 
         异常时降级到主 client 重试，保证链路可用。
+
+        name/metadata 透传给底层 LLMClient.chat，便于 Langfuse 平台
+        按 prompt name 聚合分析调用情况。
         """
         # 延迟导入避免循环依赖与启动开销
         from app.agents.llm_client import get_llm_client
@@ -232,6 +237,13 @@ class ModelRouter:
         # model_override 优先，否则按 query 路由
         target_model = model_override or self.route(query)
         main_client = get_llm_client()
+
+        # 透传 name/metadata 给底层 LLMClient，便于 Langfuse 聚合分析
+        # 合并到 kwargs 后随 small_client.chat 与 _chat_with_main_fallback 统一透传
+        if name is not None:
+            kwargs["name"] = name
+        if metadata is not None:
+            kwargs["metadata"] = metadata
 
         # 双 Provider 路由：路由到小模型且 small_client 可用时走独立客户端
         # small_client 是独立的 LLMClient 实例，有自己的 base_url/model/api_key

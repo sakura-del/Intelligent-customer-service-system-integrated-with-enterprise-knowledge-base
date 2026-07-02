@@ -366,6 +366,7 @@ class KnowledgeAgent:
         context_texts = [chunk.text for chunk in chunks]
         # 性能优化：接入 ModelRouter，简单查询路由到小模型降低延迟与成本
         # mock 模式下 chat_with_routing 透传到 mock，行为与原 chat 一致
+        # name/metadata 标记 prompt name=knowledge_summary，便于 Langfuse 聚合
         try:
             router = get_model_router()
             return router.chat_with_routing(
@@ -373,6 +374,8 @@ class KnowledgeAgent:
                 query=question,
                 temperature=0.3,
                 context_chunks=context_texts,
+                name="knowledge_summary",
+                metadata={"prompt_version": "v1"},
             )
         except Exception as exc:
             # 路由失败时降级到普通 chat，保证链路可用
@@ -381,6 +384,8 @@ class KnowledgeAgent:
                 messages=messages,
                 temperature=0.3,
                 context_chunks=context_texts,
+                name="knowledge_summary",
+                metadata={"prompt_version": "v1"},
             )
 
 
