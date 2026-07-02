@@ -11,7 +11,7 @@
 - **人工转接闭环**：情绪敏感/连续失败/用户主动要求触发转接，附转接上下文卡片传递给人工客服
 - **知识库治理**：文档管理、质量校验（去重/术语/敏感词）、版本管理与回滚、全量/增量/实时三种更新机制
 - **性能优化**：HotQueryCache 热点缓存、ModelRouter 大小模型路由、并发限流降级
-- **可观测性**：熔断降级、监控告警、Token 用量追踪、灰度发布、运营看板
+- **可观测性**：熔断降级、监控告警、Token 用量追踪、灰度发布、运营看板、Langfuse LLM 链路追踪与 Prompt 版本管理
 
 ## 技术栈
 
@@ -25,7 +25,8 @@
 | 关键词检索 | rank-bm25 |
 | 文档解析 | Unstructured + PyMuPDF + python-docx + BeautifulSoup4 |
 | 异步通信 | Redis Pub/Sub（降级内存队列） |
-| 测试 | pytest（615+ 测试用例） |
+| LLM 可观测性 | Langfuse（trace 可视化 + Prompt 版本管理，未配置自动降级） |
+| 测试 | pytest（640+ 测试用例） |
 
 ## 项目结构
 
@@ -53,6 +54,7 @@ app/
 │   ├── performance.py   # HotQueryCache / ModelRouter / 并发优化
 │   ├── circuit_breaker.py   # 熔断降级
 │   ├── observability.py # 监控告警
+│   ├── langfuse_client.py   # Langfuse 链路追踪客户端（未配置自动降级）
 │   └── experiment.py    # 灰度发布与 A/B 测试
 ├── knowledge/           # 知识与数据层
 │   ├── pipeline.py      # 文档入库流水线
@@ -205,6 +207,10 @@ python -m pytest tests/test_graph.py -q
 | `BUSINESS_ADAPTER_MODE` | mock | 业务适配器模式（mock/http） |
 | `WORKING_HOURS_START` | 9 | 人工服务开始时间 |
 | `WORKING_HOURS_END` | 18 | 人工服务结束时间 |
+| `LANGFUSE_ENABLED` | False | Langfuse 链路追踪开关，False 或未配置 key 时全部降级 no-op |
+| `LANGFUSE_PUBLIC_KEY` | 空 | Langfuse 公钥（Project Settings → API Keys 获取） |
+| `LANGFUSE_SECRET_KEY` | 空 | Langfuse 私钥 |
+| `LANGFUSE_HOST` | https://cloud.langfuse.com | Langfuse 服务地址（自建填内网地址） |
 
 ## 降级策略
 
@@ -216,6 +222,7 @@ python -m pytest tests/test_graph.py -q
 - **Redis 不可达** → 降级到内存队列
 - **业务 API 失败** → 降级到 mock 业务系统
 - **真实 LLM 调用失败** → ModelRouter 自动回退默认模型重试
+- **Langfuse 未配置或上报失败** → 降级为 no-op，LLMClient 回退原生 OpenAI SDK，不影响主链路
 
 ## 开发规范
 

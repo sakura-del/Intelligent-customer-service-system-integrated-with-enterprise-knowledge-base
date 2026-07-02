@@ -34,11 +34,14 @@ class _MockLLM:
         messages: List[Dict[str, Any]],
         temperature: float = 0.3,
         context_chunks: Optional[List[str]] = None,
+        name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> str:
         """根据 messages 与检索片段拼一个简单回复。
 
         context_chunks 由 RAGAgent 在调用前注入，避免 mock 时还要重新解析 prompt。
+        name/metadata 仅用于 Langfuse 追踪，mock 模式下直接忽略，保证签名兼容。
         """
         # 取最后一条 user 消息作为问题，找不到时用兜底文案
         user_question = ""
@@ -64,12 +67,15 @@ class _MockLLM:
         messages: List[Dict[str, Any]],
         temperature: float = 0.3,
         context_chunks: Optional[List[str]] = None,
+        name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Generator[Dict[str, Any], None, None]:
         """Mock 流式生成：按字符切片 yield token，模拟流式体验。
 
         每 2 个字符一组，间隔 10ms，让前端能看到打字效果，
         便于在没有真实 LLM 时验证 SSE 链路。
+        name/metadata 仅用于 Langfuse 追踪，mock 模式下直接忽略，保证签名兼容。
         """
         # 复用 chat 拿到完整回复，再切片 yield，避免逻辑重复
         full_reply = self.chat(
@@ -79,6 +85,38 @@ class _MockLLM:
             **kwargs,
         )
         yield from _slice_text_to_stream(full_reply)
+
+
+def _inject_langfuse_tracing(
+    kwargs: Dict[str, Any],
+    name: Optional[str],
+    metadata: Optional[Dict[str, Any]],
+) -> None:
+    """当 Langfuse 启用且 name/metadata 非空时，向 kwargs 注入 extra_body。
+
+    langfuse.openai 包装器会自动识别请求体中的 name/metadata 字段，用于在
+    Langfuse 面板标记 prompt name 与版本等元信息；未启用或无 name/metadata
+    时直接返回，保持原生 OpenAI 调用行为不变，确保向后兼容。
+    """
+    # name/metadata 均为空时无需注入，避免无意义字段污染请求体
+    if not name and not metadata:
+        return
+    try:
+        from app.core.langfuse_client import is_langfuse_enabled
+
+        if not is_langfuse_enabled():
+            return
+    except Exception as exc:
+        # Langfuse 状态检查异常：跳过注入，不影响主链路
+        logger.warning("Langfuse 状态检查失败，跳过 extra_body 注入：%s", exc)
+        return
+    # 合并已有 extra_body，避免覆盖调用方传入的其他自定义字段
+    extra_body: Dict[str, Any] = dict(kwargs.get("extra_body") or {})
+    if metadata:
+        extra_body["metadata"] = metadata
+    if name:
+        extra_body["name"] = name
+    kwargs["extra_body"] = extra_body
 
 
 class LLMClient:
@@ -124,14 +162,33 @@ class LLMClient:
         return self._mock is not None
 
     def _ensure_client(self) -> None:
-        """延迟创建 OpenAI 客户端，未配置 Key 时跳过。"""
+        """延迟创建 OpenAI 客户端，未配置 Key 时跳过。
+
+        Langfuse 启用时改用 langfuse.openai.OpenAI 包装器，与原生 SDK 接口
+        完全兼容，无需改动其他调用代码；包装器加载失败时降级原生 OpenAI，
+        保证主链路不受 Langfuse 影响。此处分发逻辑同时覆盖主模型与小模型客户端。
+        """
         if self._mock is not None or self._client is not None:
             return
         try:
             # 延迟导入：未安装 openai 或无 Key 时仍可加载本模块
             from openai import OpenAI
 
-            self._client = OpenAI(
+            client_cls = OpenAI
+            # Langfuse 启用时替换为 langfuse.openai 包装器，自动上报 LLM trace
+            try:
+                from app.core.langfuse_client import is_langfuse_enabled
+
+                if is_langfuse_enabled():
+                    from langfuse.openai import OpenAI as LangfuseOpenAI
+
+                    client_cls = LangfuseOpenAI
+                    logger.info("Langfuse 已启用，LLMClient 使用 langfuse.openai 包装器")
+            except Exception as exc:
+                # langfuse 包缺失或导入失败：降级原生 OpenAI，不阻断初始化
+                logger.warning("Langfuse 包装器加载失败，使用原生 OpenAI：%s", exc)
+
+            self._client = client_cls(
                 api_key=self.api_key,
                 base_url=self.base_url,
             )
@@ -145,12 +202,16 @@ class LLMClient:
         messages: List[Dict[str, Any]],
         temperature: float = 0.3,
         context_chunks: Optional[List[str]] = None,
+        name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> str:
         """调用 LLM 生成回复。
 
         messages 遵循 OpenAI Chat 格式：[{role, content}, ...]。
         context_chunks 用于 mock 模式拼接，真实模式下忽略以节省 token。
+        name/metadata 用于 Langfuse 追踪（标记 prompt name 与版本等），
+        Langfuse 未启用或为空时忽略，保证现有调用行为不变。
         """
         # 1. mock 模式直接返回拼接结果
         if self._mock is not None:
@@ -171,6 +232,9 @@ class LLMClient:
                 context_chunks=context_chunks,
                 **kwargs,
             )
+
+        # Langfuse 启用且 name/metadata 非空时注入 extra_body，否则 no-op
+        _inject_langfuse_tracing(kwargs, name, metadata)
 
         try:
             assert self._client is not None  # 仅供类型检查器收敛
@@ -205,6 +269,8 @@ class LLMClient:
         messages: List[Dict[str, Any]],
         temperature: float = 0.3,
         context_chunks: Optional[List[str]] = None,
+        name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Generator[Dict[str, Any], None, None]:
         """流式调用 LLM，逐 token yield。
@@ -216,6 +282,7 @@ class LLMClient:
 
         mock 模式按字符切片模拟流式；真实模式调用 OpenAI SDK 的 stream=True。
         出错时降级 yield error 事件，保证调用方拿到统一协议。
+        name/metadata 用于 Langfuse 追踪，未启用或为空时忽略，保证向后兼容。
         """
         # 1. mock 模式：直接走 _MockLLM.stream_chat 切片 yield
         if self._mock is not None:
@@ -237,6 +304,9 @@ class LLMClient:
                 **kwargs,
             )
             return
+
+        # Langfuse 启用且 name/metadata 非空时注入 extra_body，否则 no-op
+        _inject_langfuse_tracing(kwargs, name, metadata)
 
         yield from self._stream_from_openai(
             messages=messages,
@@ -367,6 +437,9 @@ def get_small_llm_client() -> Optional[LLMClient]:
 
     未配置 SMALL_LLM_API_KEY 时返回 None，调用方应降级到主 LLMClient，
     保证未配置小模型时主链路仍可用。
+
+    Langfuse 包装由 LLMClient._ensure_client 统一分发：启用时小模型客户端
+    同样使用 langfuse.openai.OpenAI，无需在此重复检查 is_langfuse_enabled()。
     """
     global _small_llm_client
     if _small_llm_client is not None:

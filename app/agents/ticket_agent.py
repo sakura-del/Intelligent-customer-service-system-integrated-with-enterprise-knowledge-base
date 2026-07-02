@@ -206,7 +206,13 @@ class TicketAgent:
             {"role": "user", "content": message},
         ]
         try:
-            raw = self.llm_client.chat(messages=messages, temperature=0.1)
+            # name 标识工单信息提取 prompt，metadata 记录 prompt 版本
+            raw = self.llm_client.chat(
+                messages=messages,
+                temperature=0.1,
+                name="ticket_extract",
+                metadata={"prompt_version": "v1"},
+            )
         except Exception as exc:
             # 调用异常时降级，避免拖垮整个工单创建流程
             logger.warning("LLM 调用异常，降级规则提取：%s", exc)

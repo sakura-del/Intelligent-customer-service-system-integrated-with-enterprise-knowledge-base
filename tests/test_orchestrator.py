@@ -99,6 +99,8 @@ def _isolate_chroma_and_ingest():
     # _llm_based_intent 走 ModelRouter 调用真实千问，导致 fake LLM 注入失效
     settings.LLM_API_KEY = ""
     settings.SMALL_LLM_API_KEY = ""
+    # 强制 Langfuse 关闭：避免 .env 配置真实 key 时 LLMClient 误用 langfuse.openai
+    settings.LANGFUSE_ENABLED = False
 
     # 清理上次测试残留，保证入库从零开始
     persist_path = Path(TEST_PERSIST_DIR)

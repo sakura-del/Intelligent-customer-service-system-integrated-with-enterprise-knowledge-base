@@ -105,7 +105,13 @@ class QueryRewriter:
             {"role": "user", "content": question},
         ]
         try:
-            reply = self.llm_client.chat(messages=messages, temperature=0.2)
+            # name 标识查询改写 prompt，metadata 记录 prompt 版本
+            reply = self.llm_client.chat(
+                messages=messages,
+                temperature=0.2,
+                name="query_rewrite",
+                metadata={"prompt_version": "v1"},
+            )
             return self._parse_llm_queries(reply)
         except Exception as exc:
             # LLM 调用失败时不阻断主流程，记录日志后由上层兜底

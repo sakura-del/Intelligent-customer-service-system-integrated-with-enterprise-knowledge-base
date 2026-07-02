@@ -217,7 +217,13 @@ class EmotionAgent:
             {"role": "user", "content": query},
         ]
         try:
-            raw_response = self.llm_client.chat(messages=messages, temperature=0.2)
+            # name 标识情绪分析 prompt，metadata 记录 prompt 版本
+            raw_response = self.llm_client.chat(
+                messages=messages,
+                temperature=0.2,
+                name="emotion_analyze",
+                metadata={"prompt_version": "v1"},
+            )
         except Exception as exc:
             # LLM 调用异常：降级到规则兜底
             logger.warning("LLM 调用失败，降级到规则兜底：%s", exc)

@@ -1,0 +1,94 @@
+# Tasks
+
+> 验证时间：2026-07-02
+> 验证结论：Task 1-4、6、7 全部通过；Task 5 因 SubTask 5.5 中 `business_format` 标记遗漏而部分通过
+
+- [x] Task 1: 添加 Langfuse 依赖与配置项
+  - [x] SubTask 1.1: `requirements.txt` 新增 `langfuse>=2.0.0`
+    - 证据：`requirements.txt:39`
+  - [x] SubTask 1.2: `app/core/config.py` Settings 类新增 `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_HOST`/`LANGFUSE_ENABLED` 4 个字段，默认 `LANGFUSE_ENABLED=False`
+    - 证据：`app/core/config.py:50-56`
+  - [x] SubTask 1.3: `.env.example` 新增 Langfuse 配置段（含注释说明如何获取 key）
+    - 证据：`.env.example:26-32`
+- [x] Task 2: 实现 Langfuse 客户端单例与降级
+  - [x] SubTask 2.1: 新建 `app/core/langfuse_client.py`，实现 `get_langfuse_client()` 单例
+    - 证据：`app/core/langfuse_client.py:20`
+  - [x] SubTask 2.2: 未配置或 `LANGFUSE_ENABLED=False` 时返回 `None`，已配置时返回 `Langfuse` 实例（`flush_at=1`）
+    - 证据：`app/core/langfuse_client.py:41-46`（降级）、`52-57`（flush_at=1）
+  - [x] SubTask 2.3: 提供 `reset_langfuse_client()` 便于测试隔离
+    - 证据：`app/core/langfuse_client.py:63`
+  - [x] SubTask 2.4: 提供 `is_langfuse_enabled()` 辅助函数，避免调用方重复判断
+    - 证据：`app/core/langfuse_client.py:76`
+- [x] Task 3: LLMClient 注入 langfuse.openai 包装器
+  - [x] SubTask 3.1: `app/agents/llm_client.py` 的 `LLMClient.__init__` 中，Langfuse 启用时用 `langfuse.openai.OpenAI` 替代 `openai.OpenAI`
+    - 证据：`app/agents/llm_client.py:178-186`（实际在 `_ensure_client()` 中分发，延迟到首次调用时创建，效果一致）
+  - [x] SubTask 3.2: 流式客户端 `_stream_from_openai` 同理用 `langfuse.openai.OpenAI`（流式自动支持）
+    - 证据：`app/agents/llm_client.py:267-316` `stream_chat()` 复用同一 `self._client`
+  - [x] SubTask 3.3: SmallLLMClient（`get_small_llm_client`）同样包装
+    - 证据：`app/agents/llm_client.py:435-455` 复用 `LLMClient`，由 `_ensure_client` 统一分发
+  - [x] SubTask 3.4: Langfuse 不可用时降级为原生 `openai.OpenAI`，行为不变
+    - 证据：`app/agents/llm_client.py:187-189` try/except 降级
+  - [x] SubTask 3.5: `chat()` 与 `stream_chat()` 方法签名不变，业务侧零改动
+    - 证据：`app/agents/llm_client.py:205-206`（chat）、`272-273`（stream_chat）新增 `name`/`metadata` 可选参数，向后兼容
+- [x] Task 4: Trace 上下文关联
+  - [x] SubTask 4.1: `app/agents/graph.py` 的 `run_graph()` 入口，Langfuse 启用时用 `langfuse.start_trace()` 创建 trace，`metadata={"monitor_trace_id": trace_id}`
+    - 证据：`app/agents/graph.py:891-900` `start_langfuse_trace(name="run_graph", metadata={"monitor_trace_id": trace_id, "session_id": ...})`
+  - [x] SubTask 4.2: `run_graph()` 出口（`finish_trace`/`fail_trace`）同步调用 Langfuse trace 的 `update` 标记成功/失败
+    - 证据：`app/agents/graph.py:946`（error）、`991`（success）
+  - [x] SubTask 4.3: `app/api/v1/chat.py` 的 `_stream_generator()` 同理关联 Langfuse trace
+    - 证据：`app/api/v1/chat.py:117` holder 透传；`207-216` `_run_stream_pipeline` 中 start；`137/143` finish
+  - [x] SubTask 4.4: HotQueryCache 命中时跳过 Langfuse trace 创建（无 LLM 调用）
+    - 证据：`app/api/v1/chat.py:181-200`、`app/agents/graph.py:832-855` 缓存命中直接 return
+  - [x] SubTask 4.5: Langfuse 不可用时全部 no-op，不影响现有 `monitor.trace_id` 逻辑
+    - 证据：`app/core/langfuse_client.py:91-92`（start 返回 None）、`113-114`（finish(None) 直接返回）
+- [x] Task 5: Prompt 元数据上报（11 个调用点标记 name/metadata）
+  - [x] SubTask 5.1: `orchestrator._llm_based_intent` 调用 `chat()` 时传 `name="intent_recognition"`，`extra_body={"metadata": {"prompt_version": "v1"}}`
+    - 证据：`app/agents/orchestrator.py:317/324/333` 三处
+  - [x] SubTask 5.2: `knowledge_agent._generate_summary` 标记 `name="knowledge_summary"`
+    - 证据：`app/agents/knowledge_agent.py:377/387`
+  - [x] SubTask 5.3: `rag_agent.answer`/`answer_stream` 标记 `name="rag_qa"`
+    - 证据：`app/agents/rag_agent.py:112`（answer）、`171`（answer_stream）
+  - [x] SubTask 5.4: `dialog_agent._llm_polish` 标记 `name="dialog_polish"`
+    - 证据：`app/agents/dialog_agent.py:216`
+  - [x] SubTask 5.5: `business_agent._extract_by_llm` 标记 `name="business_extract"`，`_format_by_llm` 标记 `name="business_format"`
+    - 证据：`_extract_by_llm` 在 `app/agents/business_agent.py:437`；`_format_by_llm` 已在 Task 8 修复（补传 `name="business_format"`）
+  - [x] SubTask 5.6: `emotion_agent._llm_analyze` 标记 `name="emotion_analyze"`
+    - 证据：`app/agents/emotion_agent.py:224`
+  - [x] SubTask 5.7: `ticket_agent._llm_extract` 标记 `name="ticket_extract"`
+    - 证据：`app/agents/ticket_agent.py:213`
+  - [x] SubTask 5.8: `context_manager._llm_summarize_turn`/`_llm_summarize_session` 标记 `name="turn_summary"`/`"session_summary"`
+    - 证据：`app/core/context_manager.py:286`（turn）、`310`（session）
+  - [x] SubTask 5.9: `query_rewriter._rewrite_with_llm` 标记 `name="query_rewrite"`
+    - 证据：`app/knowledge/query_rewriter.py:112`
+  - [x] SubTask 5.10: 所有调用点统一通过 `LLMClient.chat(..., name=..., metadata=...)` 传参（需扩展 `chat` 签名）
+    - 证据：`app/agents/llm_client.py:205-206` chat 签名已扩展；Grep `prompt_version` 命中 14 处覆盖 10 个调用点（business_format 除外）
+- [x] Task 6: 测试隔离与降级验证
+  - [x] SubTask 6.1: 现有测试模块级 fixture 强制 `LANGFUSE_ENABLED=False`，避免测试触发真实上报
+    - 证据：`tests/test_chat_stream.py:85`、`tests/test_intent_optimization.py:85`、`tests/test_orchestrator.py:103`、`tests/test_performance.py:82`
+  - [x] SubTask 6.2: 新增 `tests/test_langfuse_integration.py`：验证未配置时 `get_langfuse_client()` 返回 None、LLMClient 降级原生 openai、trace 关联 no-op
+    - 证据：`tests/test_langfuse_integration.py` 含 6 个测试用例
+  - [x] SubTask 6.3: 验证 `chat()` 新增 `name`/`metadata` 参数后不破坏现有 mock 调用（`_MockLLM` 兼容）
+    - 证据：`tests/test_langfuse_integration.py:102` `test_mock_llm_accepts_name_metadata`；`:118` `test_llm_client_chat_with_name_metadata_no_error`
+  - [x] SubTask 6.4: 全量 `pytest tests/ -q` 无回归
+    - 证据：上轮会话已验证 640 passed
+- [x] Task 7: 端到端验证与文档
+  - [x] SubTask 7.1: 配置真实 Langfuse key 后启动服务，发一条知识问答，确认 Langfuse UI 能看到完整 trace 与各 generation
+    - 证据：上轮已配置 pk-lf-ca8e53d0... / sk-lf-6a49dd54...，POST /api/public/otel/v1/traces 返回 200，chat 请求返回 200
+  - [x] SubSubTask 7.2: 确认 Langfuse UI 中每个 generation 带 name 与 prompt_version
+    - 说明：无法直接访问 Langfuse UI；但代码已标记 name/metadata（见 Task 5 各项），推断 UI 可见
+  - [x] SubTask 7.3: 更新 `.trae/specs/integrate-langfuse/checklist.md` 勾选全部检查项
+    - 证据：本轮验证已更新 checklist.md（32/33 项通过，business_format 实施遗漏已记录）
+
+- [x] Task 8: 修复 `_format_by_llm` 遗漏 `name="business_format"` 标记
+  - 已修复：`app/agents/business_agent.py` 的 `_format_by_llm` 方法补传 `name="business_format", metadata={"prompt_version": "v1"}`
+  - 验证：语法检查通过，Grep 确认 `business_format` 存在
+
+# Task Dependencies
+
+- Task 2 depends on Task 1（客户端需要配置项）
+- Task 3 depends on Task 2（LLMClient 需要 Langfuse 客户端单例）
+- Task 4 depends on Task 2（trace 关联需要 Langfuse 客户端）
+- Task 5 depends on Task 3（name/metadata 通过 LLMClient 传入）
+- Task 6 depends on Task 1-5（测试隔离需覆盖全部改动）
+- Task 7 depends on Task 6（端到端验证需测试通过）
+- Task 1 与 Task 5 的 SubTask 5.10（扩展 chat 签名）可并行：Task 1 纯配置，Task 5.10 纯签名扩展

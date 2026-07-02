@@ -22,6 +22,7 @@ from app.agents.orchestrator import (
     ESCALATE_REPLY,
     get_orchestrator,
 )
+from app.core.langfuse_client import finish_langfuse_trace, start_langfuse_trace
 from app.core.logging import get_logger
 from app.core.monitor import get_monitor
 from app.core.security import verify_api_key
@@ -111,9 +112,12 @@ def _stream_generator(request: ChatRequest) -> Generator[bytes, None, None]:
     trace_id = monitor.start_trace(
         session_id=request.session_id or "", message=request.message
     )
+    # Task 4：Langfuse trace 由 _run_stream_pipeline 在缓存未命中时写入 holder
+    # 缓存命中无 LLM 调用不会创建，holder 透传 trace_id 供 metadata 关联
+    langfuse_holder: Dict[str, Any] = {"monitor_trace_id": trace_id}
     first_event_yielded = False
     try:
-        for event in _run_stream_pipeline(request):
+        for event in _run_stream_pipeline(request, langfuse_holder):
             # 首个事件（meta 或 token）yield 前记录首 Token 耗时
             # 后续事件不再记录，保证每条 trace 只有一个 stream_first_token
             if not first_event_yielded:
@@ -129,14 +133,20 @@ def _stream_generator(request: ChatRequest) -> Generator[bytes, None, None]:
             yield event
         # 流正常结束：标记 trace 成功，避免长期停留在 running 状态
         monitor.finish_trace(trace_id, status="success")
+        # Task 4：标记 Langfuse trace 成功（缓存命中时 holder 内为 None，no-op）
+        finish_langfuse_trace(langfuse_holder.get("langfuse_trace"), "success")
     except Exception as exc:
         # 兜底：未捕获异常也发 error 事件，避免前端无响应
         logger.exception("流式对话异常：%s", exc)
         monitor.fail_trace(trace_id, str(exc))
+        # Task 4：标记 Langfuse trace 失败（辅助函数内部已降级，不抛出）
+        finish_langfuse_trace(langfuse_holder.get("langfuse_trace"), "error")
         yield _format_sse("error", {"message": f"内部错误：{exc}"})
 
 
-def _run_stream_pipeline(request: ChatRequest) -> Generator[bytes, None, None]:
+def _run_stream_pipeline(
+    request: ChatRequest, langfuse_holder: Dict[str, Any] = None
+) -> Generator[bytes, None, None]:
     """执行流式编排主流程：会话 → 意图识别 → 路由 → 流式生成。
 
     拆分出来便于异常统一处理：本函数内任何异常都会被外层捕获并转 error 事件。
@@ -144,6 +154,10 @@ def _run_stream_pipeline(request: ChatRequest) -> Generator[bytes, None, None]:
     性能优化：入口检查 HotQueryCache，命中直接 yield meta + 切片 token + done，
     跳过全部编排（意图识别+检索+生成），首 Token <100ms。
     与 graph.py 同步端点共用 HotQueryCache 单例，重复查询任一端点都能命中。
+
+    langfuse_holder：由 _stream_generator 传入的可写字典；缓存未命中走 LLM 编排时，
+    在此创建 Langfuse trace 并写入 holder["langfuse_trace"]，供外层结束/标记状态。
+    缓存命中无 LLM 调用，不创建（避免空 trace）。
     """
     # 1. 会话管理：复用或创建 session，记录用户消息
     session_id = session_manager.get_or_create(
@@ -186,6 +200,20 @@ def _run_stream_pipeline(request: ChatRequest) -> Generator[bytes, None, None]:
             return
     except Exception as exc:
         logger.warning("流式热点缓存读取失败，降级到正常编排：%s", exc)
+
+    # Task 4：缓存未命中才会走 LLM 编排，此时创建 Langfuse trace 让 generation 自动挂载
+    # 缓存命中已在上方 return，不会执行此处，避免无 LLM 调用时创建空 trace
+    if langfuse_holder is not None:
+        try:
+            langfuse_holder["langfuse_trace"] = start_langfuse_trace(
+                name="stream_chat",
+                metadata={
+                    "monitor_trace_id": langfuse_holder.get("monitor_trace_id"),
+                    "session_id": session_id,
+                },
+            )
+        except Exception as exc:
+            logger.warning("启动 Langfuse trace 失败，降级 no-op：%s", exc)
 
     # 2. 意图识别 + 情绪评分（复用 OrchestratorAgent 的能力）
     orchestrator = get_orchestrator()

@@ -104,10 +104,13 @@ class RAGAgent:
         context_chunks = [chunk.text for chunk in chunks]
 
         # 4. LLM 生成
+        # name/metadata 标记 prompt name=rag_qa，便于 Langfuse 聚合分析
         reply = self.llm_client.chat(
             messages=prompt_messages,
             temperature=0.3,
             context_chunks=context_chunks,
+            name="rag_qa",
+            metadata={"prompt_version": "v1"},
         )
 
         # 5. 综合置信度：取 Top-1 相似度作为基础，受命中数加成
@@ -159,11 +162,14 @@ class RAGAgent:
         context_texts = [chunk.text for chunk in context_chunks]
 
         # 3. 流式生成：透传 LLM token，同时累积完整文本用于 done 事件
+        # name/metadata 标记 prompt name=rag_qa，便于 Langfuse 聚合分析
         full_text_parts: List[str] = []
         for event in self.llm_client.stream_chat(
             messages=prompt_messages,
             temperature=0.3,
             context_chunks=context_texts,
+            name="rag_qa",
+            metadata={"prompt_version": "v1"},
         ):
             if event["type"] == "token":
                 full_text_parts.append(event["content"])
