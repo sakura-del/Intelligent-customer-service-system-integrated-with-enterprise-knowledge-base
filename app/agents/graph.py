@@ -31,6 +31,7 @@ from app.core.context_manager import (
     get_intent_detector,
 )
 from app.core.logging import get_logger
+from app.core.langfuse_client import finish_langfuse_trace, start_langfuse_trace
 from app.core.monitor import get_monitor
 from app.core.performance import get_hot_query_cache
 from app.core.session import session_manager
@@ -883,6 +884,21 @@ def run_graph(
         logger.warning("启动监控 trace 失败，本次不埋点：%s", exc)
         trace_id = None
 
+    # Task 4：创建 Langfuse trace，让 langfuse.openai 的 LLM 调用自动挂载 generation
+    # 未启用时返回 None，finish_langfuse_trace(None, ...) 为 no-op，不影响主链路
+    langfuse_trace = None
+    try:
+        langfuse_trace = start_langfuse_trace(
+            name="run_graph",
+            metadata={
+                "monitor_trace_id": trace_id,
+                "session_id": effective_session_id,
+            },
+        )
+    except Exception as exc:
+        logger.warning("启动 Langfuse trace 失败，降级 no-op：%s", exc)
+        langfuse_trace = None
+
     # 构造初始 state
     initial_state: AgentState = {
         "session_id": effective_session_id,
@@ -926,6 +942,8 @@ def run_graph(
                 get_monitor().fail_trace(trace_id, str(exc))
             except Exception:
                 pass
+        # Task 4：标记 Langfuse trace 失败（辅助函数内部已降级，不抛出）
+        finish_langfuse_trace(langfuse_trace, status="error")
         raise
 
     # 把最终状态同步回 session_manager：意图、情绪、历史、失败计数
@@ -969,6 +987,8 @@ def run_graph(
             )
         except Exception as exc:
             logger.warning("完成监控 trace 失败：%s", exc)
+    # Task 4：标记 Langfuse trace 成功并 flush 上报（辅助函数内部已降级，不抛出）
+    finish_langfuse_trace(langfuse_trace, status="success")
 
     return final_state
 
