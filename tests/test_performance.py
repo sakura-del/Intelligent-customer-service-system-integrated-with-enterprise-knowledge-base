@@ -78,6 +78,8 @@ def _reset_performance_singletons():
     original_small_key = settings.SMALL_LLM_API_KEY
     # 强制小模型不可用，保证测试注入的 fake 不被延迟初始化覆盖
     settings.SMALL_LLM_API_KEY = ""
+    # 强制 Langfuse 关闭：避免 .env 配置真实 key 时 LLMClient 误用 langfuse.openai
+    settings.LANGFUSE_ENABLED = False
 
     reset_model_router()
     reset_hot_query_cache()

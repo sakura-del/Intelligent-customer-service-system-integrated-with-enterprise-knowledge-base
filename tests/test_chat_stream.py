@@ -81,6 +81,8 @@ def _isolate_chroma_and_singletons():
     settings.LLM_API_KEY = ""
     # 强制小模型不可用，避免 .env 配置真实 key 时延迟初始化为真实客户端
     settings.SMALL_LLM_API_KEY = ""
+    # 强制 Langfuse 关闭：避免 .env 配置真实 key 时 LLMClient 误用 langfuse.openai
+    settings.LANGFUSE_ENABLED = False
 
     # 清理上次残留
     persist_path = Path(TEST_PERSIST_DIR)

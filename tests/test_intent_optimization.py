@@ -81,6 +81,8 @@ def _isolate_singletons():
     # 避免 .env 配置真实千问 key 时 _small_llm_client 被初始化为真实客户端，
     # 导致测试注入的 fake 被 get_small_llm_client() 延迟初始化覆盖
     settings.SMALL_LLM_API_KEY = ""
+    # 强制 Langfuse 关闭：避免 .env 配置真实 key 时 LLMClient 误用 langfuse.openai
+    settings.LANGFUSE_ENABLED = False
 
     persist_path = Path(TEST_PERSIST_DIR)
     if persist_path.exists():
