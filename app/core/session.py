@@ -10,6 +10,8 @@
 - history：对话历史（role/content），用于多轮上下文
 - emotion_score：用户情绪分数（0-1，越低越负面）
 - turn_count / failed_attempts：调度状态计数
+- agent_status / assigned_agent_id / escalation_card / resolve_note：
+  坐席辅助字段，跟踪转接后会话的接管状态与备注
 
 线程安全：所有读写经同一把锁串行化，保证多线程环境下状态一致。
 内存优化：history 限制最大长度，避免长会话无限增长。
@@ -176,6 +178,109 @@ class SessionManager:
             return True
 
     # ------------------------------------------------------------------
+    # 坐席辅助管理
+    # ------------------------------------------------------------------
+    # 优先级到数值的映射：数值越大越紧急，便于 list_pending_sessions
+    # 按数值降序排序，让坐席优先看到最紧急的会话
+    _PRIORITY_RANK: Dict[str, int] = {
+        "highest": 4,
+        "high": 3,
+        "medium": 2,
+        "low": 1,
+        "info": 0,
+    }
+
+    def list_pending_sessions(self) -> List[Dict[str, Any]]:
+        """返回所有 agent_status='pending' 的会话摘要，按 EscalationPriority 降序排列。
+
+        排序映射：highest=4 > high=3 > medium=2 > low=1 > info=0
+        便于坐席按优先级接手最紧急的会话。
+        返回字段：session_id / user_id / priority / escalate_reason / turn_count / created_at / agent_status / assigned_agent_id
+        """
+        with self._lock:
+            pending: List[Dict[str, Any]] = []
+            for session in self._sessions.values():
+                # 仅关注待接入会话，已接手/已解决的不进入待办列表
+                if session.get("agent_status") != "pending":
+                    continue
+                # 无卡片的视为 info，避免排序时缺失值导致 KeyError
+                card = session.get("escalation_card") or {}
+                priority = card.get("priority", "info")
+                pending.append(
+                    {
+                        "session_id": session.get("session_id"),
+                        "user_id": session.get("user_id"),
+                        "priority": priority,
+                        "escalate_reason": card.get("escalate_reason"),
+                        "turn_count": int(session.get("turn_count", 0)),
+                        "created_at": session.get("created_at"),
+                        "agent_status": session.get("agent_status"),
+                        "assigned_agent_id": session.get("assigned_agent_id"),
+                    }
+                )
+            # 按优先级数值降序：最紧急的排在前，未知优先级视作 info(0)
+            pending.sort(
+                key=lambda x: self._PRIORITY_RANK.get(x["priority"], 0),
+                reverse=True,
+            )
+            return pending
+
+    def assign_agent(self, session_id: str, agent_id: str) -> bool:
+        """原子化接手会话：CAS 判断 pending → assigned。
+
+        利用 RLock 保证多坐席并发接手同一会话时只有一个成功，
+        避免重复接手导致会话状态错乱。
+        成功返回 True，会话不存在或状态非 pending 返回 False。
+        """
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            # CAS：再次校验状态仍为 pending，避免并发接手时重复写入
+            if session.get("agent_status") != "pending":
+                return False
+            session["agent_status"] = "assigned"
+            session["assigned_agent_id"] = agent_id
+            return True
+
+    def resolve_session(
+        self, session_id: str, note: Optional[str] = None
+    ) -> bool:
+        """原子化标记会话已解决：CAS 判断 assigned → resolved。
+
+        仅允许 assigned 状态的会话被标记已解决，
+        避免 pending 状态被直接关闭导致坐席遗漏处理。
+        成功返回 True，会话不存在或状态非 assigned 返回 False。
+        """
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            # CAS：仅 assigned 状态可流转到 resolved，防止 pending 被跳过处理
+            if session.get("agent_status") != "assigned":
+                return False
+            session["agent_status"] = "resolved"
+            session["resolve_note"] = note
+            return True
+
+    def mark_pending(
+        self, session_id: str, escalation_card: Dict[str, Any]
+    ) -> bool:
+        """转接触发时将会话置为 pending 并缓存 EscalationCard。
+
+        由 EscalationEngine.check_escalation() 调用方在转接决策通过后调用，
+        把转接卡片缓存到 session 中，避免坐席查询时重复构建卡片。
+        成功返回 True，会话不存在返回 False。
+        """
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            session["agent_status"] = "pending"
+            session["escalation_card"] = escalation_card
+            return True
+
+    # ------------------------------------------------------------------
     # 维护与诊断
     # ------------------------------------------------------------------
     def reset_session(self, session_id: str) -> None:
@@ -249,6 +354,16 @@ class SessionManager:
             "emotion_score": None,
             "turn_count": 0,
             "failed_attempts": 0,
+            # 以下为坐席辅助端点（add-agent-assist-endpoints）新增字段：
+            # 跟踪转接后会话的接管状态，避免坐席遗漏处理或重复接手
+            # None=未触发转接；pending=已转接待接入；assigned=坐席已接手；resolved=已解决
+            "agent_status": None,
+            # 坐席接手后写入，便于审计与多坐席协作时定位责任人
+            "assigned_agent_id": None,
+            # 缓存转接时生成的 EscalationCard，坐席查询时直接读取避免重复构建
+            "escalation_card": None,
+            # 标记已解决时坐席可写入备注，便于事后回溯处理结论
+            "resolve_note": None,
         }
 
 
