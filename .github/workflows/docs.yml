@@ -1,0 +1,81 @@
+name: Deploy Docs
+
+# 触发条件：main 分支的 docs/ 或 mkdocs.yml 变更时自动部署
+# 也支持手动触发（workflow_dispatch），便于临时重建文档站点
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'docs-requirements.txt'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+# Cloudflare Pages 部署同一时间只允许一个并发
+concurrency:
+  group: cloudflare-pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 拉取代码
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # mike 版本管理需要完整历史
+
+      # 2. 安装 Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'docs-requirements.txt'
+
+      # 3. 安装文档构建依赖
+      - name: Install docs dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r docs-requirements.txt
+
+      # 4. 构建 MkDocs 站点到 site/ 目录
+      - name: Build MkDocs site
+        run: mkdocs build --strict --clean
+
+      # 5. 上传构建产物（便于 GitHub Actions 页面下载排查）
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkdocs-site
+          path: site/
+          retention-days: 7
+
+      # 6. 部署到 Cloudflare Pages
+      # 需在 GitHub Secrets 配置 CLOUDFLARE_API_TOKEN 与 CLOUDFLARE_ACCOUNT_ID
+      # Cloudflare Dashboard 创建 Pages 项目：名称 intelligent-cs
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: intelligent-cs
+          directory: site
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+      # 7. 同时部署到 GitHub Pages 作为备份（无需额外配置）
+      # 部署到 gh-pages 分支，GitHub Settings → Pages → Source: gh-pages
+      - name: Deploy to GitHub Pages (backup)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages
+          force_orphan: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'docs: deploy to GitHub Pages'

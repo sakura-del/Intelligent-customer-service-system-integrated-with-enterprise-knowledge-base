@@ -1,6 +1,13 @@
 # 整合企业知识库的智能客服系统
 
+[![文档](https://img.shields.io/badge/文档-在线查看-5e35b1?style=flat-square&logo=materialformkdocs&logoColor=white)](https://intelligent-cs.pages.dev/)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![测试](https://img.shields.io/badge/测试-668+-success?style=flat-square)](tests/)
+
 基于「多 Agent 分工协作 + RAG 知识增强」双轮驱动的企业级智能客服系统。通过 1 个调度 Agent 协调 5 个专业 Agent，结合混合检索与 LLM 生成，实现高准确率、低延迟、可监控的自动化客服能力。
+
+> :material-book-open: **[完整使用文档](https://intelligent-cs.pages.dev/)** — 包含快速开始、安装部署、配置说明、架构设计、各功能模块教程、API 参考、示例与 FAQ，支持中英双语切换。
 
 ## 核心特性
 
@@ -242,6 +249,39 @@ python -m pytest tests/test_graph.py -q
 - **命名约定**：使用描述性名称，遵循 PEP 8
 - **注释原则**：解释「为什么」而非「做什么」，公共 API 提供文档字符串
 - **测试保障**：重构前确保测试覆盖，修改后跑全量回归
+- **文档同步**：每次功能新增或删除必须同步更新 `docs/` 下对应文档（中英双语），详见 [贡献指南](https://intelligent-cs.pages.dev/contributing/)
+
+## 文档
+
+完整使用文档基于 MkDocs Material 构建，支持中英双语，部署在 Cloudflare Pages：
+
+- **在线访问**：https://intelligent-cs.pages.dev/
+- **本地预览**：
+
+  ```bash
+  pip install -r docs-requirements.txt
+  mkdocs serve
+  # 访问 http://127.0.0.1:8000
+  ```
+
+- **文档结构**：
+
+  ```text
+  docs/
+  ├── index.zh.md / index.en.md       # 首页（中/英）
+  ├── quick-start.*.md                 # 快速开始
+  ├── installation.*.md                # 安装指南
+  ├── configuration.*.md               # 配置说明
+  ├── architecture/                    # 架构设计（总体/Agent/RAG/降级）
+  ├── tutorials/                       # 使用教程（对话/知识库/坐席/转接/业务/性能/可观测/运营）
+  ├── api-reference.*.md               # API 参考
+  ├── examples.*.md                    # 示例
+  ├── faq.*.md                         # 常见问题
+  ├── contributing.*.md                # 贡献指南
+  └── changelog.*.md                   # 更新日志
+  ```
+
+- **自动部署**：推送到 `main` 分支的 `docs/` 变更会自动触发 GitHub Actions 构建并部署到 Cloudflare Pages + GitHub Pages（备份）
 
 ## 许可证
 

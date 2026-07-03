@@ -1,0 +1,6 @@
+# 文档构建依赖（独立于运行时依赖，避免污染主 requirements.txt）
+# 用法：pip install -r docs-requirements.txt && mkdocs build
+
+mkdocs>=1.6.0
+mkdocs-material>=9.5.0
+mkdocs-static-i18n>=1.2.0
