@@ -34,6 +34,7 @@
 app/
 ├── api/v1/              # 接入层：REST API 端点
 │   ├── chat.py          # 对话端点（同步 + SSE 流式）
+│   ├── agent.py         # 坐席辅助端点（待接入/接手/发消息/知识推荐/业务辅助/解决/方案沉淀）
 │   ├── knowledge.py     # 知识库管理
 │   ├── evaluation.py    # 检索评估
 │   ├── performance.py   # 性能监控
@@ -66,9 +67,12 @@ app/
 │   ├── versioning.py    # 版本管理
 │   └── update_mechanism.py  # 全量/增量/实时更新
 ├── schemas/             # Pydantic 数据模型
+│   ├── agent.py         # 坐席辅助端点 schemas（AgentSessionSummary/Detail 等）
+│   ├── escalation.py    # 转接卡片与方案记录
+│   └── ...              # 其他业务/知识 schemas
 └── static/              # 前端界面（对话/监控/运营看板）
 
-tests/                   # 615+ 测试用例
+tests/                   # 668+ 测试用例
 models/bge-large-zh/     # 本地 BGE 模型权重
 .trae/specs/             # Spec 驱动开发文档
 ```
@@ -150,6 +154,14 @@ curl -X POST http://localhost:8000/api/v1/chat/stream \
 | `/api/v1/health` | GET | 健康检查 |
 | `/api/v1/chat` | POST | 同步对话 |
 | `/api/v1/chat/stream` | POST | SSE 流式对话 |
+| `/api/v1/agent/sessions/pending` | GET | 坐席待接入会话列表 |
+| `/api/v1/agent/sessions/{id}` | GET | 会话详情（含 EscalationCard + history） |
+| `/api/v1/agent/sessions/{id}/accept` | POST | 坐席接手会话 |
+| `/api/v1/agent/sessions/{id}/messages` | POST | 坐席发消息（追加 history） |
+| `/api/v1/agent/sessions/{id}/knowledge-recommend` | POST | 知识推荐辅助 |
+| `/api/v1/agent/sessions/{id}/business-assist` | POST | 业务查询辅助（含脱敏） |
+| `/api/v1/agent/sessions/{id}/resolve` | POST | 标记会话已解决 |
+| `/api/v1/agent/sessions/{id}/solution` | POST | 录入方案沉淀为 FAQ 候选 |
 | `/api/v1/knowledge/ingest` | POST | 文档入库 |
 | `/api/v1/knowledge/stats` | GET | 知识库统计 |
 | `/api/v1/evaluation/run` | POST | 跑检索评估（Recall@K/Hit Rate/MRR/幻觉率） |
@@ -170,7 +182,7 @@ python -m pytest tests/ -q
 python -m pytest tests/test_graph.py -q
 ```
 
-当前测试规模：615+ 用例，覆盖核心链路与边界场景。
+当前测试规模：668+ 用例，覆盖核心链路与边界场景。
 
 ## 性能指标
 
