@@ -1,7 +1,5 @@
 name: Deploy Docs
 
-# 触发条件：main 分支的 docs/ 或 mkdocs.yml 变更时自动部署
-# 也支持手动触发（workflow_dispatch），便于临时重建文档站点
 on:
   push:
     branches:
@@ -13,7 +11,6 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
-# 部署同一时间只允许一个并发
 concurrency:
   group: docs-deploy
   cancel-in-progress: true
@@ -21,19 +18,15 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # pages-action 需要 deployments:write 权限来创建 GitHub Deployment
-    # gh-pages 需要 contents:write 权限来推送到 gh-pages 分支
     permissions:
       contents: write
       deployments: write
     steps:
-      # 1. 拉取代码
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # mike 版本管理需要完整历史
+          fetch-depth: 0
 
-      # 2. 安装 Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -41,17 +34,22 @@ jobs:
           cache: 'pip'
           cache-dependency-path: 'docs-requirements.txt'
 
-      # 3. 安装文档构建依赖
       - name: Install docs dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r docs-requirements.txt
+          pip list | grep -E "(mkdocs|material|i18n)"
 
-      # 4. 构建 MkDocs 站点到 site/ 目录
       - name: Build MkDocs site
         run: mkdocs build --strict --clean
 
-      # 5. 上传构建产物（便于 GitHub Actions 页面下载排查）
+      - name: Verify build output
+        run: |
+          echo "=== Build output structure ==="
+          ls -la site/
+          echo "=== Checking index.html ==="
+          head -5 site/index.html
+
       - name: Upload site artifact
         uses: actions/upload-artifact@v4
         with:
@@ -59,10 +57,6 @@ jobs:
           path: site/
           retention-days: 7
 
-      # 6. 部署到 Cloudflare Pages（主部署）
-      # 需在 GitHub Secrets 配置 CLOUDFLARE_API_TOKEN 与 CLOUDFLARE_ACCOUNT_ID
-      # Cloudflare Dashboard 创建 Direct Upload 项目：名称 intelligent-cs
-      # 未配置或失败不影响 GitHub Pages 备份部署
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         continue-on-error: true
@@ -74,8 +68,6 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: main
 
-      # 7. 同时部署到 GitHub Pages 作为备份（无需额外配置）
-      # 部署到 gh-pages 分支，GitHub Settings → Pages → Source: gh-pages
       - name: Deploy to GitHub Pages (backup)
         uses: peaceiris/actions-gh-pages@v4
         with:
