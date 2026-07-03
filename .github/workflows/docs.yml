@@ -13,14 +13,19 @@ on:
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
-# Cloudflare Pages 部署同一时间只允许一个并发
+# 部署同一时间只允许一个并发
 concurrency:
-  group: cloudflare-pages-deploy
+  group: docs-deploy
   cancel-in-progress: true
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # pages-action 需要 deployments:write 权限来创建 GitHub Deployment
+    # gh-pages 需要 contents:write 权限来推送到 gh-pages 分支
+    permissions:
+      contents: write
+      deployments: write
     steps:
       # 1. 拉取代码
       - name: Checkout
@@ -54,11 +59,14 @@ jobs:
           path: site/
           retention-days: 7
 
-      # 6. 部署到 Cloudflare Pages
+      # 6. 部署到 Cloudflare Pages（主部署）
       # 需在 GitHub Secrets 配置 CLOUDFLARE_API_TOKEN 与 CLOUDFLARE_ACCOUNT_ID
-      # Cloudflare Dashboard 创建 Pages 项目：名称 intelligent-cs
+      # Cloudflare Dashboard 创建 Direct Upload 项目：名称 intelligent-cs
+      # 未配置时失败不影响 GitHub Pages 备份部署
       - name: Deploy to Cloudflare Pages
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
         uses: cloudflare/pages-action@v1
+        continue-on-error: true
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
