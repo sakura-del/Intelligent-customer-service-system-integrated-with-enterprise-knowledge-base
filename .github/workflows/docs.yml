@@ -63,7 +63,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: intelligent-cs
+          projectName: intelligent-cs-8p2
           directory: site
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: main
