@@ -1,0 +1,148 @@
+site_name: 整合企业知识库的智能客服系统
+site_url: https://intelligent-cs.pages.dev/
+site_description: 基于「多 Agent 分工协作 + RAG 知识增强」双轮驱动的企业级智能客服系统使用文档
+site_author: Sakura
+repo_url: https://github.com/sakura-del/Intelligent-customer-service-system-integrated-with-enterprise-knowledge-base
+repo_name: GitHub 仓库
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+# 构建产物目录，Cloudflare Pages 会从 site/ 拾取
+site_dir: site
+
+# 版权与社交链接
+copyright: Copyright &copy; 2026 Sakura · 仅用于学习与内部研究
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs             # 顶部 Tab 分组
+    - navigation.sections         # 侧边栏分组
+    - navigation.expand           # 默认展开子项
+    - navigation.top              # 返回顶部按钮
+    - navigation.indexes          # 章节首页
+    - search.suggest              # 搜索建议
+    - search.highlight            # 搜索高亮
+    - content.code.copy           # 代码块一键复制
+    - content.code.annotate       # 代码注释
+    - content.tabs.link           # 同步 Tab 切换
+    - toc.follow                  # 跟随滚动 TOC
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: 切换至暗色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: 切换至亮色模式
+  font:
+    text: Noto Sans SC
+    code: JetBrains Mono
+  favicon: assets/favicon.svg
+  icon:
+    logo: material/robot-happy
+
+# 多语言插件：默认中文，按 .zh.md / .en.md 后缀分发
+plugins:
+  - search:
+      separator: '[\s\u200b\-]'
+  - i18n:
+      docs_structure: suffix         # 后缀式命名 index.zh.md / index.en.md
+      languages:
+        - locale: zh
+          default: true
+          name: 简体中文
+          build: true
+        - locale: en
+          default: false
+          name: English
+          build: true
+
+# Markdown 扩展
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# 顶部导航：双语插件会按语言自动挑选对应后缀文件
+nav:
+  - 首页: index.md
+  - 快速开始:
+      - 一分钟跑起来: quick-start.md
+      - 安装指南: installation.md
+      - 配置说明: configuration.md
+  - 架构设计:
+      - 总体架构: architecture.md
+      - 多 Agent 协同: architecture/agents.md
+      - RAG 检索流程: architecture/rag.md
+      - 降级策略: architecture/fallback.md
+  - 使用教程:
+      - 对话端点: tutorials/chat.md
+      - 知识库管理: tutorials/knowledge.md
+      - 坐席辅助工作台: tutorials/agent-assist.md
+      - 人工转接: tutorials/escalation.md
+      - 业务系统集成: tutorials/business.md
+      - 性能优化: tutorials/performance.md
+      - 可观测性: tutorials/observability.md
+      - 运营管理: tutorials/operations.md
+  - API 参考: api-reference.md
+  - 示例: examples.md
+  - 常见问题: faq.md
+  - 贡献指南: contributing.md
+  - 更新日志: changelog.md
+
+extra:
+  # 顶部语言切换器由 i18n 插件自动注入
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/sakura-del/Intelligent-customer-service-system-integrated-with-enterprise-knowledge-base
+      name: GitHub 仓库
+  # 站点版本信息
+  version:
+    provider: mike
+    default: latest
+
+extra_css:
+  - assets/stylesheets/extra.css

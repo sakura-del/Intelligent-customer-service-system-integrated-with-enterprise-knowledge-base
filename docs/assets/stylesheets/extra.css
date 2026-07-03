@@ -1,0 +1,104 @@
+/* MkDocs Material 自定义样式 */
+
+:root {
+  --md-primary-fg-color: #5e35b1;
+  --md-primary-fg-color--light: #7e57c2;
+  --md-primary-fg-color--dark: #4527a0;
+  --md-accent-fg-color: #3f51b5;
+}
+
+/* 首页 Hero 区 */
+.md-typeset .hero {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.md-typeset .hero h1 {
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #5e35b1 0%, #3f51b5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.md-typeset .hero .badge-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+.md-typeset .hero .badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--md-default-fg-color--lightest);
+  color: var(--md-primary-fg-color);
+}
+
+/* 卡片网格 */
+.md-typeset .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.md-typeset .grid .card {
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+  background: var(--md-default-fg-color--lightest);
+  border-left: 4px solid var(--md-primary-fg-color);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.md-typeset .grid .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(94, 53, 177, 0.15);
+}
+
+.md-typeset .grid .card h3 {
+  margin-top: 0;
+  color: var(--md-primary-fg-color);
+}
+
+/* 性能指标表 */
+.md-typeset .metrics-table th {
+  background: var(--md-primary-fg-color);
+  color: white;
+}
+
+.md-typeset .metrics-table .pass {
+  color: #2e7d32;
+  font-weight: bold;
+}
+
+.md-typeset .metrics-table .fail {
+  color: #c62828;
+  font-weight: bold;
+}
+
+/* 代码块加大字号 */
+.md-typeset pre > code {
+  font-size: 0.85rem;
+}
+
+/* 章节锚点偏移，避免被顶部导航遮挡 */
+.md-typeset :target {
+  scroll-margin-top: 5rem;
+}
+
+/* 提示框颜色微调 */
+.md-typeset .admonition.tip,
+.md-typeset details.tip {
+  border-color: #00bcd4;
+}
+
+.md-typeset .admonition.tip > .admonition-title,
+.md-typeset details.tip > .admonition-title {
+  background: rgba(0, 188, 212, 0.1);
+}

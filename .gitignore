@@ -7,6 +7,9 @@ __pycache__/
 *.pyo
 *.pyd
 
+# MkDocs 构建产物（CI 中自动构建，不入库）
+site/
+
 # 虚拟环境
 .venv/
 venv/
