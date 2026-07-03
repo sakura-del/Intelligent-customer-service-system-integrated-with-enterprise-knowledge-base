@@ -624,6 +624,17 @@ def escalate_node(state: AgentState) -> AgentState:
     # 失败时仅记录日志，不影响转接主流程
     state["escalation_card"] = _build_escalation_card_safe(state)
 
+    # 将会话置为 pending 并缓存 EscalationCard，供坐席工作台列出待接入会话
+    # 失败时仅记录日志，不阻断转接主流程（与卡片生成一致的降级策略），
+    # 避免会话状态写入异常导致转接主链路中断
+    session_id = state.get("session_id") or ""
+    escalation_card = state.get("escalation_card")
+    if session_id and escalation_card:
+        try:
+            session_manager.mark_pending(session_id, escalation_card)
+        except Exception as exc:
+            logger.warning("mark_pending 失败，不影响转接主链路：%s", exc)
+
     _record_step_safe(
         trace_id,
         "escalate",

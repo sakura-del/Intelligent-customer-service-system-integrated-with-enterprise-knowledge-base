@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import (
+    agent,
     chat,
     escalation,
     evaluation,
@@ -64,6 +65,8 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router)
     app.include_router(monitor.router)
     app.include_router(escalation.router)
+    # 坐席辅助：与 escalation 同属人机协同闭环，紧随其后注册便于关联查阅
+    app.include_router(agent.router)
     # 阶段四：知识库体系完善 - 新增路由
     app.include_router(update.router)
     app.include_router(mining.router)
