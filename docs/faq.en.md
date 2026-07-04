@@ -199,7 +199,7 @@ Organized into the four categories of **Installation / Configuration / Usage / P
     **Reason**: `HotQueryCache` caches replies for high-frequency queries (default 1000 entries). After a knowledge base update, the cache still returns stale replies.
 
     !!! tip "Auto-clear cache after batch ingestion"
-        The [batch ingestion script](examples.en.md) already includes a cache-clear call, so no manual clearing is needed.
+        The [batch ingestion script](examples.en.md#example-3-batch-ingestion) already includes a cache-clear call, so no manual clearing is needed.
 
 ??? question "Q: Streaming responses (SSE) frequently disconnect. What should I do?"
 
@@ -306,7 +306,7 @@ curl http://localhost:8000/api/v1/agent/sessions/$SESSION_ID \
         - name/version for the 11 prompt markers
         - Automatic token / cost / latency statistics
 
-        See [Example 5: Integrating with Langfuse](examples.en.md).
+        See [Example 5: Integrating with Langfuse](examples.en.md#example-5-langfuse).
 
 ---
 

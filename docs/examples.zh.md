@@ -304,7 +304,7 @@ curl -s -X POST "http://localhost:8000/api/v1/agent/sessions/$SESSION_ID/resolve
 
 ---
 
-## 示例 3：知识库批量入库脚本
+## 示例 3：知识库批量入库脚本 {#example-3-batch-ingestion}
 
 遍历指定目录下所有 PDF/Word/Markdown 文件，逐个调用 `ingest` 端点，入库后统一清缓存。
 
@@ -629,7 +629,7 @@ if __name__ == "__main__":
 
 ---
 
-## 示例 5：与 Langfuse 集成查看 trace
+## 示例 5：与 Langfuse 集成查看 trace {#example-5-langfuse}
 
 系统已内置 Langfuse 链路追踪，11 个 LLM 调用点全部标记 prompt name/version。本示例演示如何配置并通过 Langfuse 查看 trace。
 

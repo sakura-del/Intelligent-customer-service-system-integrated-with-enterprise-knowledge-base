@@ -305,7 +305,7 @@ Wraps a lightweight client class covering the three high-frequency scenarios of 
 
 ---
 
-## Example 3: Knowledge Base Batch Ingestion Script
+## Example 3: Knowledge Base Batch Ingestion Script {#example-3-batch-ingestion}
 
 Iterates all PDF/Word/Markdown files in the specified directory, calls the `ingest` endpoint for each, and clears the cache after all ingestions are complete.
 
@@ -630,7 +630,7 @@ if __name__ == "__main__":
 
 ---
 
-## Example 5: Integrating with Langfuse to View Traces
+## Example 5: Integrating with Langfuse to View Traces {#example-5-langfuse}
 
 The system has built-in Langfuse tracing; all 11 LLM call points are tagged with prompt name/version. This example shows how to configure and view traces via Langfuse.
 
