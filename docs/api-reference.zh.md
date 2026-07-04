@@ -141,6 +141,14 @@ weight: 100
 | `/api/v1/evaluation/reports` | GET | 历史报告摘要列表 | ✅ |
 | `/api/v1/evaluation/reports/{report_id}` | GET | 单个报告详情 | ✅ |
 
+### RAGAS 生成质量评估
+
+| 端点 | 方法 | 说明 | 鉴权 |
+|------|------|------|------|
+| `/api/v1/evaluation/ragas/run` | POST | 触发 RAGAS 评测（需 ragas 库 + LLM_API_KEY） | ✅ |
+| `/api/v1/evaluation/ragas/reports` | GET | 历史 RAGAS 报告摘要列表 | ✅ |
+| `/api/v1/evaluation/ragas/reports/{report_id}` | GET | 单个 RAGAS 报告详情 | ✅ |
+
 ### 性能监控
 
 | 端点 | 方法 | 说明 | 鉴权 |
@@ -662,6 +670,82 @@ SSE 流式对话，事件序列 `meta` → `token`（多次）→ `done`。
 #### GET /api/v1/evaluation/reports/{report_id}
 
 查询单个报告详情，不存在返回 404。
+
+---
+
+### RAGAS 生成质量评估
+
+通过 LLM 对「问题 → 检索上下文 → 生成答案 → 标准答案」全链路打分，量化 RAG 端到端生成质量。四项核心指标：`faithfulness`、`answer_relevancy`、`context_precision`、`context_recall`。详见 [RAGAS 评估教程](tutorials/evaluation-ragas.md)。
+
+#### POST /api/v1/evaluation/ragas/run
+
+触发 RAGAS 评测。**前置条件**：已安装 `ragas` 库且 `LLM_API_KEY` 非空，否则返回 `503`。
+
+**请求体**（`RagasRunRequest`）：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `testset_path` | string | 内置 12 条 | 外部测试集 JSON 路径，为空用内置默认集 |
+| `top_k` | int | `RAGAgent` 默认值 | 检索 Top-K，范围 1–50 |
+
+**响应体**（`RagasEvaluationReport`）：
+
+```json
+{
+  "report_id": "20260704_103045_a1b2c3d4",
+  "created_at": "2026-07-04T10:30:45",
+  "total_queries": 12,
+  "faithfulness": 0.8723,
+  "answer_relevancy": 0.9015,
+  "context_precision": 0.8456,
+  "context_recall": 0.7890,
+  "duration_seconds": 187.45,
+  "source": "default",
+  "case_details": [
+    {
+      "question": "忘记登录密码怎么办？",
+      "ground_truth": "如果忘记登录密码……",
+      "answer": "您可以在登录页点击「忘记密码」……",
+      "contexts": ["用户忘记密码时……", "重置链接 30 分钟内有效……"],
+      "faithfulness": 0.92,
+      "answer_relevancy": 0.95,
+      "context_precision": 0.88,
+      "context_recall": 0.85,
+      "error": null
+    }
+  ]
+}
+```
+
+**状态码**：
+
+| 状态码 | 说明 |
+|--------|------|
+| 200 | 评测成功 |
+| 503 | `ragas` 未安装或 `LLM_API_KEY` 未配置 |
+
+??? example "curl 示例"
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/evaluation/ragas/run \
+      -H "X-API-Key: $API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"top_k": 5}'
+    ```
+
+??? warning "503 降级响应"
+    ```json
+    {"detail": "RAGAS 评估需要安装 ragas 库并配置 LLM_API_KEY"}
+    ```
+
+#### GET /api/v1/evaluation/ragas/reports
+
+按时间倒序列出历史 RAGAS 报告摘要。
+
+**响应体**：`List[RagasReportSummary]`，仅含概要字段（无 `case_details`），详情通过 `/ragas/reports/{report_id}` 查询。
+
+#### GET /api/v1/evaluation/ragas/reports/{report_id}
+
+查询单个 RAGAS 报告详情（含 `case_details`），不存在返回 404。
 
 ---
 

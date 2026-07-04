@@ -1,0 +1,15 @@
+- [x] `requirements.txt` 包含 `ragas>=0.2.0`
+- [x] `app/schemas/ragas_evaluation.py` 定义了完整的 RAGAS 数据模型（TestCase / TestSet / CaseDetail / EvaluationReport / RunRequest / ReportSummary）
+- [x] `app/knowledge/ragas_evaluator.py` 实现了 `RagasEvaluator` 类，包含 `run()` / `list_reports()` / `get_report()` 方法
+- [x] 内置 RAGAS 测试集至少 10 条，每条包含 `question` 和 `ground_truth` 字段
+- [x] RAGAS 评估器复用 `KnowledgeRetriever` 进行检索，复用 `RAGAgent` 进行答案生成
+- [x] RAGAS 评估器复用 `LLMClient`（OpenAI 兼容接口）作为 RAGAS 内部评分 LLM
+- [x] 报告持久化到 `{CHROMA_PERSIST_DIR}/ragas_reports/` 目录
+- [x] 降级策略：ragas 未安装或 LLM_API_KEY 为空时返回 503 + 明确错误信息
+- [x] `app/api/v1/evaluation.py` 新增三个 RAGAS 端点，复用 `verify_api_key` 鉴权
+- [x] `tests/test_ragas_evaluation.py` 覆盖数据模型、测试集加载、指标计算、报告持久化、降级策略
+- [x] 全部测试通过，无回归
+- [x] 中英文文档新增 RAGAS 评估章节
+- [x] `docs/api-reference.zh.md` / `.en.md` 包含 RAGAS 端点说明
+- [x] `mkdocs.yml` 注册了新文档页面
+- [x] `README.md` 评估能力描述包含 RAGAS
