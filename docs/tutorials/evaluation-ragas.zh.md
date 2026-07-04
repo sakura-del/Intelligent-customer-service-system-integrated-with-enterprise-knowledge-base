@@ -334,4 +334,4 @@ RAGAS 评估耗时长，不适合每次请求都触发，建议作为定期质�
 
 - [知识库管理教程](knowledge.zh.md)：入库后跑 RAGAS 评估验证端到端质量
 - [性能优化教程](performance.zh.md)：用检索评估快速验证调参效果
-- [API 参考](api-reference.zh.md)：RAGAS 三个端点的完整请求/响应字段说明
+- [API 参考](../api-reference.zh.md)：RAGAS 三个端点的完整请求/响应字段说明

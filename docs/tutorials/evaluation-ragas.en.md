@@ -335,4 +335,4 @@ Pull historical reports via `GET /api/v1/evaluation/ragas/reports` and plot the 
 
 - [Knowledge Base Management Tutorial](knowledge.en.md): run RAGAS evaluation after ingestion to verify end-to-end quality
 - [Performance Optimization Tutorial](performance.en.md): use retrieval evaluation to quickly validate tuning effects
-- [API Reference](api-reference.en.md): full request/response field reference for the three RAGAS endpoints
+- [API Reference](../api-reference.en.md): full request/response field reference for the three RAGAS endpoints
