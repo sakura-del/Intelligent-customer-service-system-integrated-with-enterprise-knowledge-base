@@ -141,6 +141,14 @@ Beyond HTTP status codes, all error responses follow a unified structure:
 | `/api/v1/evaluation/reports` | GET | Historical report summary list | ✅ |
 | `/api/v1/evaluation/reports/{report_id}` | GET | Single report details | ✅ |
 
+### RAGAS Generation Quality Evaluation
+
+| Endpoint | Method | Description | Auth |
+|----------|--------|-------------|------|
+| `/api/v1/evaluation/ragas/run` | POST | Trigger a RAGAS evaluation run (requires ragas library + LLM_API_KEY) | ✅ |
+| `/api/v1/evaluation/ragas/reports` | GET | Historical RAGAS report summary list | ✅ |
+| `/api/v1/evaluation/ragas/reports/{report_id}` | GET | Single RAGAS report details | ✅ |
+
 ### Performance Monitoring
 
 | Endpoint | Method | Description | Auth |
@@ -662,6 +670,82 @@ List historical report summaries, sorted by time descending.
 #### GET /api/v1/evaluation/reports/{report_id}
 
 Query a single report's details; returns 404 if it does not exist.
+
+---
+
+### RAGAS Generation Quality Evaluation
+
+Uses an LLM to score the full chain of "question → retrieved context → generated answer → reference answer", quantifying end-to-end RAG generation quality. Four core metrics: `faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`. See the [RAGAS Evaluation Tutorial](tutorials/evaluation-ragas.md) for details.
+
+#### POST /api/v1/evaluation/ragas/run
+
+Trigger a RAGAS evaluation run. **Prerequisite**: the `ragas` library is installed and `LLM_API_KEY` is non-empty; otherwise returns `503`.
+
+**Request body** (`RagasRunRequest`):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `testset_path` | string | Built-in 12 cases | External test set JSON path; uses built-in default when empty |
+| `top_k` | int | `RAGAgent` default | Retrieval Top-K, range 1–50 |
+
+**Response body** (`RagasEvaluationReport`):
+
+```json
+{
+  "report_id": "20260704_103045_a1b2c3d4",
+  "created_at": "2026-07-04T10:30:45",
+  "total_queries": 12,
+  "faithfulness": 0.8723,
+  "answer_relevancy": 0.9015,
+  "context_precision": 0.8456,
+  "context_recall": 0.7890,
+  "duration_seconds": 187.45,
+  "source": "default",
+  "case_details": [
+    {
+      "question": "What should I do if I forget my login password?",
+      "ground_truth": "If you forget your login password...",
+      "answer": "You can click \"Forgot Password\" on the login page...",
+      "contexts": ["When a user forgets their password...", "The reset link is valid for 30 minutes..."],
+      "faithfulness": 0.92,
+      "answer_relevancy": 0.95,
+      "context_precision": 0.88,
+      "context_recall": 0.85,
+      "error": null
+    }
+  ]
+}
+```
+
+**Status codes**:
+
+| Status Code | Description |
+|-------------|-------------|
+| 200 | Evaluation succeeded |
+| 503 | `ragas` not installed or `LLM_API_KEY` not configured |
+
+??? example "curl example"
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/evaluation/ragas/run \
+      -H "X-API-Key: $API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"top_k": 5}'
+    ```
+
+??? warning "503 fallback response"
+    ```json
+    {"detail": "RAGAS 评估需要安装 ragas 库并配置 LLM_API_KEY"}
+    ```
+
+#### GET /api/v1/evaluation/ragas/reports
+
+List historical RAGAS report summaries, sorted by time descending.
+
+**Response body**: `List[RagasReportSummary]`, contains only summary fields (no `case_details`); query `/ragas/reports/{report_id}` for details.
+
+#### GET /api/v1/evaluation/ragas/reports/{report_id}
+
+Query a single RAGAS report's details (including `case_details`); returns 404 if it does not exist.
 
 ---
 

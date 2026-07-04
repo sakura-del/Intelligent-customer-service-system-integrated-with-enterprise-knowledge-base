@@ -172,6 +172,9 @@ curl -X POST http://localhost:8000/api/v1/chat/stream \
 | `/api/v1/knowledge/ingest` | POST | 文档入库 |
 | `/api/v1/knowledge/stats` | GET | 知识库统计 |
 | `/api/v1/evaluation/run` | POST | 跑检索评估（Recall@K/Hit Rate/MRR/幻觉率） |
+| `/api/v1/evaluation/ragas/run` | POST | 跑 RAGAS 生成质量评估（Faithfulness/Answer Relevancy/Context Precision/Context Recall） |
+| `/api/v1/evaluation/ragas/reports` | GET | 列出历史 RAGAS 报告摘要 |
+| `/api/v1/evaluation/ragas/reports/{report_id}` | GET | 查询单个 RAGAS 报告详情 |
 | `/api/v1/performance/metrics` | GET | 性能指标（缓存命中率/路由统计/响应时间） |
 | `/api/v1/performance/cache/invalidate` | POST | 清空热点缓存（知识库更新后调用） |
 | `/api/v1/observability/health` | GET | 组件健康检查（LLM/向量库/Redis/磁盘） |
@@ -200,9 +203,15 @@ python -m pytest tests/test_graph.py -q
 | Recall@5 | ≥ 0.85 | 1.0 | ✓ |
 | Hit Rate | ≥ 0.90 | 0.9333 | ✓ |
 | 幻觉率 | ≤ 0.10 | 0.0 | ✓ |
+| Faithfulness | ≥ 0.80 | 待评测 | — |
+| Answer Relevancy | ≥ 0.75 | 待评测 | — |
+| Context Precision | ≥ 0.70 | 待评测 | — |
+| Context Recall | ≥ 0.70 | 待评测 | — |
 | 独立解决率 | ≥ 60% | 80% | ✓ |
 | 平均响应时间 | ≤ 3s | 2.27s | ✓ |
 | P95 响应时间 | ≤ 5s | 7.94s | ✗（需流式响应优化） |
+
+RAGAS 四项生成质量指标（Faithfulness / Answer Relevancy / Context Precision / Context Recall）通过 `POST /api/v1/evaluation/ragas/run` 触发，需安装 `ragas` 库并配置 `LLM_API_KEY`，实测值随业务测试集变化，建议每次知识库大变更后运行建立基线。
 
 响应时间优化措施：
 - HotQueryCache 接入 `run_graph` 入出口，知识问答命中缓存降至 0.002s

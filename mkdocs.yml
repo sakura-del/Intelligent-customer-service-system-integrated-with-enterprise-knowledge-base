@@ -121,6 +121,7 @@ nav:
   - 使用教程:
       - 对话端点: tutorials/chat.md
       - 知识库管理: tutorials/knowledge.md
+      - RAGAS 评估: tutorials/evaluation-ragas.md
       - 坐席辅助工作台: tutorials/agent-assist.md
       - 人工转接: tutorials/escalation.md
       - 业务系统集成: tutorials/business.md
