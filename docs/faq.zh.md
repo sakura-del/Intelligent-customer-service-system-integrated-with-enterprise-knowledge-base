@@ -199,7 +199,7 @@ weight: 120
     **原因**：`HotQueryCache` 会缓存高频查询的回复（默认 1000 条），知识库更新后缓存仍返回旧回复。
 
     !!! tip "批量入库后自动清缓存"
-        使用 [批量入库脚本](examples.zh.md#示例-3知识库批量入库脚本) 时已内置清缓存调用，无需手动清。
+        使用 [批量入库脚本](examples.zh.md#example-3-batch-ingestion) 时已内置清缓存调用，无需手动清。
 
 ??? question "Q: 流式响应（SSE）经常断开怎么办？"
 
@@ -306,7 +306,7 @@ curl http://localhost:8000/api/v1/agent/sessions/$SESSION_ID \
         - 11 个 prompt 标记的 name/version
         - token / cost / latency 自动统计
 
-        详见 [示例 5：与 Langfuse 集成](examples.zh.md#示例-5与-langfuse-集成查看-trace)。
+        详见 [示例 5：与 Langfuse 集成](examples.zh.md#example-5-langfuse)。
 
 ---
 
