@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/api-reference/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/api-reference/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/api-reference/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/architecture/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/architecture/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/architecture/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/changelog/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/changelog/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/changelog/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/configuration/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/configuration/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/configuration/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/contributing/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/contributing/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/contributing/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/examples/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/examples/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/examples/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/faq/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/faq/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/faq/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/installation/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/installation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/installation/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/quick-start/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/quick-start/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/quick-start/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/architecture/agents/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/architecture/agents/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/architecture/agents/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/architecture/fallback/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/architecture/fallback/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/architecture/fallback/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/architecture/rag/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/architecture/rag/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/architecture/rag/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/agent-assist/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/agent-assist/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/agent-assist/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/business/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/business/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/business/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/chat/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/chat/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/chat/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/escalation/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/escalation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/escalation/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/evaluation-ragas/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/evaluation-ragas/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/evaluation-ragas/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/knowledge/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/knowledge/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/knowledge/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/observability/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/observability/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/observability/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/operations/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/operations/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/operations/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/performance/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/performance/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/performance/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/tutorials/security-hardening/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/security-hardening/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/security-hardening/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/api-reference/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/api-reference/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/api-reference/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/architecture/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/architecture/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/architecture/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/changelog/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/changelog/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/changelog/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/configuration/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/configuration/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/configuration/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/contributing/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/contributing/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/contributing/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/examples/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/examples/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/examples/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/faq/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/faq/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/faq/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/installation/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/installation/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/installation/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/quick-start/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/quick-start/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/quick-start/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/architecture/agents/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/architecture/agents/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/architecture/agents/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/architecture/fallback/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/architecture/fallback/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/architecture/fallback/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/architecture/rag/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/architecture/rag/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/architecture/rag/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/agent-assist/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/agent-assist/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/agent-assist/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/business/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/business/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/business/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/chat/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/chat/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/chat/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/escalation/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/escalation/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/escalation/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/evaluation-ragas/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/evaluation-ragas/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/evaluation-ragas/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/knowledge/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/knowledge/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/knowledge/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/observability/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/observability/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/observability/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/operations/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/operations/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/operations/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/performance/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/performance/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/performance/"/>
+    </url>
+    <url>
+        <loc>https://intelligent-cs-8p2.pages.dev/en/tutorials/security-hardening/</loc>
+        <lastmod>2026-07-24</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://intelligent-cs-8p2.pages.dev/en/tutorials/security-hardening/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://intelligent-cs-8p2.pages.dev/tutorials/security-hardening/"/>
+    </url>
+</urlset>
