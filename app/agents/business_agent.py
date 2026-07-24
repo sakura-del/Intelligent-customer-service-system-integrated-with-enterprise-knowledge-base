@@ -10,6 +10,7 @@
 - 敏感信息脱敏在格式化前完成，避免泄漏到日志或回复
 - 频率限制计数器加锁，保证多线程下计数准确
 """
+
 from __future__ import annotations
 
 import collections
@@ -18,7 +19,7 @@ import re
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.agents.business_adapters import (
     BusinessSystemAdapter,
@@ -75,10 +76,10 @@ class BusinessAgent:
 
     def __init__(
         self,
-        llm_client: Optional[LLMClient] = None,
-        business_api: Optional[MockBusinessAPI] = None,
-        business_adapter: Optional[BusinessSystemAdapter] = None,
-        session_manager_ref: Optional[SessionManager] = None,
+        llm_client: LLMClient | None = None,
+        business_api: MockBusinessAPI | None = None,
+        business_adapter: BusinessSystemAdapter | None = None,
+        session_manager_ref: SessionManager | None = None,
     ) -> None:
         # 延迟取单例，便于测试注入自定义实现
         self._llm_client = llm_client
@@ -89,11 +90,11 @@ class BusinessAgent:
         self._session_manager = session_manager_ref
         # 频率限制计数器：session_id -> 时间戳队列，加锁保证线程安全
         self._rate_lock = threading.RLock()
-        self._rate_counters: Dict[str, "collections.deque[float]"] = {}
+        self._rate_counters: dict[str, collections.deque[float]] = {}
         # 待确认操作：token -> op。用 RLock 因 _build_pending 内部会调
         # _remove_pending_by_session，需支持同线程重入，否则死锁
         self._pending_lock = threading.RLock()
-        self._pending_ops: Dict[str, Dict[str, Any]] = {}
+        self._pending_ops: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # 延迟依赖
@@ -209,9 +210,7 @@ class BusinessAgent:
     # ------------------------------------------------------------------
     # 待确认操作处理
     # ------------------------------------------------------------------
-    def _try_handle_pending(
-        self, query: str, session_id: str
-    ) -> Optional[BusinessResult]:
+    def _try_handle_pending(self, query: str, session_id: str) -> BusinessResult | None:
         """处理待确认操作的确认/取消。
 
         该 session 无 pending 或用户既非确认也非取消时返回 None，
@@ -233,7 +232,7 @@ class BusinessAgent:
             return self._execute_pending(op)
         return None
 
-    def _find_pending(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def _find_pending(self, session_id: str) -> dict[str, Any] | None:
         """查找该 session 的待确认操作。同一 session 仅保留一个 pending。"""
         with self._pending_lock:
             for op in self._pending_ops.values():
@@ -245,7 +244,7 @@ class BusinessAgent:
         self,
         session_id: str,
         op_type: str,
-        params_data: Dict[str, Any],
+        params_data: dict[str, Any],
         scene: BusinessScene = BusinessScene.RETURN,
     ) -> str:
         """创建待确认操作并返回 token。同 session 新操作覆盖旧操作。"""
@@ -267,10 +266,7 @@ class BusinessAgent:
 
     def _remove_pending_by_session(self, session_id: str) -> None:
         with self._pending_lock:
-            stale = [
-                t for t, op in self._pending_ops.items()
-                if op["session_id"] == session_id
-            ]
+            stale = [t for t, op in self._pending_ops.items() if op["session_id"] == session_id]
             for t in stale:
                 self._pending_ops.pop(t, None)
 
@@ -292,7 +288,7 @@ class BusinessAgent:
         q = query.strip().lower()
         return any(word in q for word in CANCEL_WORDS)
 
-    def _execute_pending(self, op: Dict[str, Any]) -> BusinessResult:
+    def _execute_pending(self, op: dict[str, Any]) -> BusinessResult:
         """执行待确认的写操作。"""
         op_type = op["op_type"]
         params_data = op["params"]
@@ -309,9 +305,7 @@ class BusinessAgent:
     # ------------------------------------------------------------------
     # 参数提取
     # ------------------------------------------------------------------
-    def _extract_params(
-        self, query: str, session: Dict[str, Any]
-    ) -> Optional[ExtractedParams]:
+    def _extract_params(self, query: str, session: dict[str, Any]) -> ExtractedParams | None:
         """参数提取：规则兜底 + LLM 增强。
 
         先用规则提取保证离线可用，LLM 非 mock 时再用 LLM 结果覆盖补充。
@@ -345,9 +339,9 @@ class BusinessAgent:
         )
 
     @staticmethod
-    def _extract_by_rules(query: str) -> Dict[str, Any]:
+    def _extract_by_rules(query: str) -> dict[str, Any]:
         """正则+关键词规则提取参数，作为 LLM 不可用时的兜底。"""
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
 
         # 场景识别：退货/会员/账户优先于订单，避免"退货订单"被误判为订单查询
         if any(k in query for k in ("退货", "退换", "退款", "换货")):
@@ -398,7 +392,7 @@ class BusinessAgent:
         return result
 
     @staticmethod
-    def _infer_query_type(query: str, scene: Optional[str]) -> Optional[str]:
+    def _infer_query_type(query: str, scene: str | None) -> str | None:
         """根据关键词推断查询细分类型。"""
         if scene == BusinessScene.ORDER.value:
             if any(k in query for k in ("物流", "快递", "单号")):
@@ -424,7 +418,7 @@ class BusinessAgent:
             return None
         return None
 
-    def _extract_by_llm(self, query: str) -> Optional[Dict[str, Any]]:
+    def _extract_by_llm(self, query: str) -> dict[str, Any] | None:
         """调用 LLM 提取参数并解析 JSON，失败返回 None。"""
         messages = [
             {"role": "system", "content": _EXTRACT_SYSTEM_PROMPT},
@@ -440,7 +434,7 @@ class BusinessAgent:
         return self._parse_json(raw)
 
     @staticmethod
-    def _parse_json(text: str) -> Optional[Dict[str, Any]]:
+    def _parse_json(text: str) -> dict[str, Any] | None:
         """从 LLM 输出中提取首个 JSON 对象，兼容 markdown 代码块。"""
         if not text:
             return None
@@ -454,7 +448,7 @@ class BusinessAgent:
             return None
 
     @staticmethod
-    def _resolve_scene(scene_str: Optional[str]) -> Optional[BusinessScene]:
+    def _resolve_scene(scene_str: str | None) -> BusinessScene | None:
         """字符串转 BusinessScene，非法值返回 None。"""
         if not scene_str:
             return None
@@ -469,7 +463,7 @@ class BusinessAgent:
     def _route(
         self,
         params: ExtractedParams,
-        session: Dict[str, Any],
+        session: dict[str, Any],
         session_id: str,
     ) -> BusinessResult:
         """按场景路由到具体处理逻辑。"""
@@ -489,18 +483,14 @@ class BusinessAgent:
         )
 
     @staticmethod
-    def _resolve_user_id(
-        params: ExtractedParams, session: Dict[str, Any]
-    ) -> Optional[str]:
+    def _resolve_user_id(params: ExtractedParams, session: dict[str, Any]) -> str | None:
         """优先用对话提取的 user_id，其次会话中的 user_id。
 
         mock 场景允许用户在对话中传入 user_id，便于测试与演示。
         """
         return params.user_id or session.get("user_id")
 
-    def _require_login(
-        self, user_id: Optional[str], scene: BusinessScene
-    ) -> Optional[BusinessResult]:
+    def _require_login(self, user_id: str | None, scene: BusinessScene) -> BusinessResult | None:
         """查询类与写操作需登录；未登录返回提示。"""
         if user_id:
             return None
@@ -514,9 +504,7 @@ class BusinessAgent:
     # ------------------------------------------------------------------
     # 订单处理
     # ------------------------------------------------------------------
-    def _handle_order(
-        self, params: ExtractedParams, user_id: Optional[str]
-    ) -> BusinessResult:
+    def _handle_order(self, params: ExtractedParams, user_id: str | None) -> BusinessResult:
         """订单查询：依赖订单号，不强制登录（订单号本身即凭证）。"""
         if not params.order_id:
             return BusinessResult(
@@ -548,7 +536,7 @@ class BusinessAgent:
     def _handle_return(
         self,
         params: ExtractedParams,
-        user_id: Optional[str],
+        user_id: str | None,
         session_id: str,
     ) -> BusinessResult:
         """退换货：创建/取消走二次确认，查询直接返回。"""
@@ -565,7 +553,7 @@ class BusinessAgent:
     def _request_create_return(
         self,
         params: ExtractedParams,
-        user_id: Optional[str],
+        user_id: str | None,
         session_id: str,
     ) -> BusinessResult:
         """创建退换货：写操作，先生成 pending 等待确认。"""
@@ -601,7 +589,7 @@ class BusinessAgent:
     def _request_cancel_return(
         self,
         params: ExtractedParams,
-        user_id: Optional[str],
+        user_id: str | None,
         session_id: str,
     ) -> BusinessResult:
         """取消退换货：写操作，先生成 pending 等待确认。"""
@@ -626,9 +614,7 @@ class BusinessAgent:
             data={"return_id": return_id},
         )
 
-    def _query_return(
-        self, params: ExtractedParams, user_id: Optional[str]
-    ) -> BusinessResult:
+    def _query_return(self, params: ExtractedParams, user_id: str | None) -> BusinessResult:
         """查询退换货进度或列出用户全部退换货。"""
         if params.return_id:
             record = self.business_api.query_return(params.return_id)
@@ -654,7 +640,7 @@ class BusinessAgent:
             data={"returns": masked_list},
         )
 
-    def _do_create_return(self, params_data: Dict[str, Any]) -> BusinessResult:
+    def _do_create_return(self, params_data: dict[str, Any]) -> BusinessResult:
         """执行创建退换货（确认后调用）。"""
         record = self.business_api.create_return(
             params_data["order_id"],
@@ -673,7 +659,7 @@ class BusinessAgent:
         reply = self._format_result(BusinessScene.RETURN, masked, params)
         return BusinessResult(reply=reply, scene=BusinessScene.RETURN, data=masked)
 
-    def _do_cancel_return(self, params_data: Dict[str, Any]) -> BusinessResult:
+    def _do_cancel_return(self, params_data: dict[str, Any]) -> BusinessResult:
         """执行取消退换货（确认后调用）。"""
         record = self.business_api.cancel_return(params_data["return_id"])
         if not record:
@@ -691,9 +677,7 @@ class BusinessAgent:
     # ------------------------------------------------------------------
     # 会员处理
     # ------------------------------------------------------------------
-    def _handle_member(
-        self, params: ExtractedParams, user_id: Optional[str]
-    ) -> BusinessResult:
+    def _handle_member(self, params: ExtractedParams, user_id: str | None) -> BusinessResult:
         """会员信息查询：需登录。"""
         login_err = self._require_login(user_id, BusinessScene.MEMBER)
         if login_err:
@@ -713,9 +697,7 @@ class BusinessAgent:
     # ------------------------------------------------------------------
     # 账户处理
     # ------------------------------------------------------------------
-    def _handle_account(
-        self, params: ExtractedParams, user_id: Optional[str]
-    ) -> BusinessResult:
+    def _handle_account(self, params: ExtractedParams, user_id: str | None) -> BusinessResult:
         """账户查询：需登录。"""
         login_err = self._require_login(user_id, BusinessScene.ACCOUNT)
         if login_err:
@@ -780,7 +762,7 @@ class BusinessAgent:
     def _format_result(
         self,
         scene: BusinessScene,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         params: ExtractedParams,
     ) -> str:
         """结构化转自然语言：LLM 优先，mock 模式或失败走模板。"""
@@ -794,7 +776,7 @@ class BusinessAgent:
     def _format_by_llm(
         self,
         scene: BusinessScene,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         params: ExtractedParams,
     ) -> str:
         """调用 LLM 生成自然语言回复。"""
@@ -822,7 +804,7 @@ class BusinessAgent:
     def _format_by_template(
         self,
         scene: BusinessScene,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         params: ExtractedParams,
     ) -> str:
         """模板拼装兜底格式化。"""
@@ -837,7 +819,7 @@ class BusinessAgent:
         return "暂无相关信息。"
 
     @staticmethod
-    def _format_order(data: Dict[str, Any], params: ExtractedParams) -> str:
+    def _format_order(data: dict[str, Any], params: ExtractedParams) -> str:
         """订单模板：状态+物流+预计送达+金额，按 query_type 侧重展示。"""
         status_map = {
             "paid": "已支付，待发货",
@@ -846,9 +828,7 @@ class BusinessAgent:
             "closed": "已关闭",
         }
         status_desc = status_map.get(data.get("status"), data.get("status", "未知"))
-        parts: List[str] = [
-            f"您的订单 #{data.get('order_id')} 当前状态：{status_desc}。"
-        ]
+        parts: list[str] = [f"您的订单 #{data.get('order_id')} 当前状态：{status_desc}。"]
         # 物流单号与预计送达仅发货后才有意义
         if data.get("tracking_no"):
             parts.append(f"物流单号：{data['tracking_no']}。")
@@ -858,7 +838,7 @@ class BusinessAgent:
         return "".join(parts)
 
     @staticmethod
-    def _format_return(data: Dict[str, Any], params: ExtractedParams) -> str:
+    def _format_return(data: dict[str, Any], params: ExtractedParams) -> str:
         """退换货模板：按 action 区分创建/取消/查询/列表。"""
         status_map = {
             "pending": "待审核",
@@ -868,10 +848,7 @@ class BusinessAgent:
         }
         if params.action == "create":
             status = status_map.get(data.get("status"), data.get("status"))
-            return (
-                f"退换货申请已创建，单号 {data.get('return_id')}，"
-                f"状态：{status}。"
-            )
+            return f"退换货申请已创建，单号 {data.get('return_id')}，状态：{status}。"
         if params.action == "cancel":
             return f"退换货单 {data.get('return_id')} 已取消。"
         # 列表场景
@@ -880,15 +857,14 @@ class BusinessAgent:
             if not records:
                 return "您目前没有退换货记录。"
             detail = "、".join(
-                f"{r['return_id']}(订单{r['order_id']},{r['status']})"
-                for r in records
+                f"{r['return_id']}(订单{r['order_id']},{r['status']})" for r in records
             )
             return f"您的退换货记录：{detail}。"
         status = status_map.get(data.get("status"), data.get("status"))
         return f"退换货单 {data.get('return_id')} 状态：{status}。"
 
     @staticmethod
-    def _format_member(data: Dict[str, Any], params: ExtractedParams) -> str:
+    def _format_member(data: dict[str, Any], params: ExtractedParams) -> str:
         """会员模板：按 query_type 侧重积分/等级/优惠券。"""
         query_type = params.query_type
         if query_type == "points":
@@ -901,37 +877,30 @@ class BusinessAgent:
                 return "您目前没有可用优惠券。"
             detail = "、".join(f"{c['code']}(¥{c['amount']})" for c in coupons)
             return f"您的优惠券：{detail}。"
-        return (
-            f"您的会员信息：等级 {data.get('level', '-')}，"
-            f"积分 {data.get('points', 0)} 分。"
-        )
+        return f"您的会员信息：等级 {data.get('level', '-')}，积分 {data.get('points', 0)} 分。"
 
     @staticmethod
-    def _format_account(data: Dict[str, Any], params: ExtractedParams) -> str:
+    def _format_account(data: dict[str, Any], params: ExtractedParams) -> str:
         """账户模板：按 query_type 侧重余额/账单/交易记录。"""
         query_type = params.query_type
         if query_type == "bill":
             bills = data.get("bills") or []
             if not bills:
                 return "您目前没有账单记录。"
-            detail = "、".join(
-                f"{b['bill_id']}(¥{b['amount']:.2f},{b['status']})" for b in bills
-            )
+            detail = "、".join(f"{b['bill_id']}(¥{b['amount']:.2f},{b['status']})" for b in bills)
             return f"您的账单：{detail}。"
         if query_type == "transactions":
             txs = data.get("transactions") or []
             if not txs:
                 return "您目前没有交易记录。"
-            detail = "、".join(
-                f"{t['type']}¥{t['amount']:.2f}({t['time']})" for t in txs
-            )
+            detail = "、".join(f"{t['type']}¥{t['amount']:.2f}({t['time']})" for t in txs)
             return f"您的交易记录：{detail}。"
         # 默认展示余额
         return f"您的账户余额：¥{data.get('balance', 0):.2f}。"
 
 
 # 模块级单例：Agent 编排无状态（除 pending/rate 计数），进程内复用
-_business_agent: Optional[BusinessAgent] = None
+_business_agent: BusinessAgent | None = None
 
 
 def get_business_agent() -> BusinessAgent:

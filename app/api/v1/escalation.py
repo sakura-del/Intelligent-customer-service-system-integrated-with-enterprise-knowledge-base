@@ -7,7 +7,6 @@
 
 闭环：人工录入 → 自动标注意图 → 审核通过 → 入库为 FAQ → 下次智能客服可检索命中
 """
-from typing import List
 
 from fastapi import APIRouter, Depends
 
@@ -52,8 +51,8 @@ def record_human_solution(
     return record
 
 
-@router.get("/solutions/pending", response_model=List[HumanSolutionRecord])
-def list_pending_solutions() -> List[HumanSolutionRecord]:
+@router.get("/solutions/pending", response_model=list[HumanSolutionRecord])
+def list_pending_solutions() -> list[HumanSolutionRecord]:
     """列出所有待审核方案，供人工审核列表展示。"""
     return get_knowledge_feedback().get_pending_solutions()
 

@@ -7,10 +7,10 @@
 - UpdateMode 用枚举约束取值，避免字符串散落难以维护
 - 响应模型字段与内部 UpdateResult 对齐，便于直接序列化返回
 """
+
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,7 @@ class UpdateRequest(BaseModel):
     """
 
     dir_path: str = Field(..., description="待扫描的文档根目录绝对或相对路径")
-    extensions: Optional[List[str]] = Field(
+    extensions: list[str] | None = Field(
         None,
         description="待处理的文件扩展名列表，为空时使用 .pdf/.docx/.html/.txt/.md",
     )
@@ -46,7 +46,7 @@ class UpdateSingleFileRequest(BaseModel):
     """
 
     file_path: str = Field(..., description="待入库的单文件路径")
-    metadata: Optional[Dict[str, str]] = Field(
+    metadata: dict[str, str] | None = Field(
         None,
         description="元数据覆盖项，如 product_category / knowledge_type 等",
     )
@@ -66,7 +66,7 @@ class UpdateResultResponse(BaseModel):
     deleted: int = Field(0, description="全量更新中清理的失效记录数")
     failed: int = Field(0, description="处理失败的文件数")
     duration_seconds: float = Field(0.0, description="本次更新总耗时（秒）")
-    errors: List[str] = Field(
+    errors: list[str] = Field(
         default_factory=list,
         description="失败文件与错误信息列表，便于排查",
     )
@@ -78,7 +78,7 @@ class UpdateStatusResponse(BaseModel):
     last_update 为空表示尚未执行过更新；message 提供人类可读的提示。
     """
 
-    last_update: Optional[UpdateResultResponse] = Field(
+    last_update: UpdateResultResponse | None = Field(
         None, description="最近一次更新结果，未执行过时为空"
     )
     message: str = Field("", description="状态说明文本")

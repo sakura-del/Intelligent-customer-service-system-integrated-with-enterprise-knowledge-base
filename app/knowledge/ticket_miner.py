@@ -16,6 +16,7 @@
 - 去重以「同意图 + cosine 相似度」判定，阈值默认 0.92
 - Ticket schema 当前未含 solution 字段，自动回退到 description 作为兜底
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -23,7 +24,7 @@ import re
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.core.logging import get_logger
 from app.schemas.mining import MinedKnowledgeItem, MiningReport
@@ -53,7 +54,7 @@ class IntentTagger:
 
     # 意图词典：意图标签 -> 关键词列表
     # 顺序即匹配优先级：靠前的优先匹配，避免被宽泛词抢占
-    INTENT_KEYWORDS: List[Tuple[str, List[str]]] = [
+    INTENT_KEYWORDS: list[tuple[str, list[str]]] = [
         ("退货咨询", ["退货", "退换", "退掉", "7天", "七天无理由", "退回"]),
         ("退款咨询", ["退款", "退钱", "退还款", "原路退回", "仅退款"]),
         ("维修咨询", ["维修", "保修", "报修", "修一下", "上门维修"]),
@@ -69,7 +70,7 @@ class IntentTagger:
     ]
 
     # 工单分类到默认意图的兜底映射
-    CATEGORY_DEFAULT_INTENT: Dict[str, str] = {
+    CATEGORY_DEFAULT_INTENT: dict[str, str] = {
         "after_sale": "售后咨询",
         "logistics": "物流查询",
         "product": "产品咨询",
@@ -80,7 +81,7 @@ class IntentTagger:
     def __init__(self) -> None:
         # 意图缓存：(description_hash + category) -> intent
         # 避免相同描述重复走关键词扫描
-        self._cache: Dict[str, str] = {}
+        self._cache: dict[str, str] = {}
         self._lock = threading.RLock()
 
     def tag(self, description: str, category: str) -> str:
@@ -107,7 +108,7 @@ class IntentTagger:
         return intent
 
     @classmethod
-    def _match_by_keywords(cls, description: str) -> Optional[str]:
+    def _match_by_keywords(cls, description: str) -> str | None:
         """按词典优先级匹配意图，未命中返回 None。"""
         for intent, keywords in cls.INTENT_KEYWORDS:
             if any(keyword in description for keyword in keywords):
@@ -153,9 +154,7 @@ class AnswerExtractor:
         re.IGNORECASE,
     )
     # 邮箱：常见邮箱格式
-    EMAIL_PATTERN = re.compile(
-        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
-    )
+    EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
     # 占位符：脱敏后保留语义但去除敏感信息
     PHONE_PLACEHOLDER = "[手机号]"
@@ -214,8 +213,8 @@ class TicketMiner:
 
     def __init__(
         self,
-        intent_tagger: Optional[IntentTagger] = None,
-        answer_extractor: Optional[AnswerExtractor] = None,
+        intent_tagger: IntentTagger | None = None,
+        answer_extractor: AnswerExtractor | None = None,
         dedup_threshold: float = DEFAULT_DEDUP_THRESHOLD,
     ) -> None:
         self._intent_tagger = intent_tagger or IntentTagger()
@@ -223,16 +222,16 @@ class TicketMiner:
         self.dedup_threshold = dedup_threshold
         self._lock = threading.RLock()
         # 最近一次挖掘报告，供 /status 端点查询
-        self._last_report: Optional[MiningReport] = None
+        self._last_report: MiningReport | None = None
 
     # ------------------------------------------------------------------
     # 对外主入口
     # ------------------------------------------------------------------
     def mine(
         self,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        status: Optional[str] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        status: str | None = None,
     ) -> MiningReport:
         """执行一次挖掘并返回报告。
 
@@ -253,10 +252,10 @@ class TicketMiner:
 
         # 同意图去重缓存：intent -> [(embedding, ticket_id), ...]
         # 仅本次挖掘生命周期内有效，避免跨次挖掘误判
-        dedup_cache: Dict[str, List[Tuple[List[float], str]]] = {}
+        dedup_cache: dict[str, list[tuple[list[float], str]]] = {}
 
-        items: List[MinedKnowledgeItem] = []
-        errors: List[str] = []
+        items: list[MinedKnowledgeItem] = []
+        errors: list[str] = []
         processed = 0
         ingested = 0
         deduped_count = 0
@@ -332,7 +331,7 @@ class TicketMiner:
         )
         return report
 
-    def get_last_report(self) -> Optional[MiningReport]:
+    def get_last_report(self) -> MiningReport | None:
         """返回最近一次挖掘报告，未挖掘过返回 None。"""
         with self._lock:
             return self._last_report.model_copy() if self._last_report else None
@@ -341,7 +340,7 @@ class TicketMiner:
     # 工单拉取与过滤
     # ------------------------------------------------------------------
     @staticmethod
-    def _fetch_tickets(status: Optional[str]) -> List[Ticket]:
+    def _fetch_tickets(status: str | None) -> list[Ticket]:
         """从 TicketStore 拉取工单。
 
         status 合法时按状态过滤；非法或 None 时返回全部工单。
@@ -362,8 +361,8 @@ class TicketMiner:
     @staticmethod
     def _in_time_range(
         ticket: Ticket,
-        start_time: Optional[datetime],
-        end_time: Optional[datetime],
+        start_time: datetime | None,
+        end_time: datetime | None,
     ) -> bool:
         """判断工单 created_at 是否落在 [start_time, end_time] 内。
 
@@ -378,12 +377,12 @@ class TicketMiner:
 
     @staticmethod
     def _build_filter_snapshot(
-        start_time: Optional[datetime],
-        end_time: Optional[datetime],
-        status: Optional[str],
+        start_time: datetime | None,
+        end_time: datetime | None,
+        status: str | None,
     ) -> dict:
         """构造过滤条件快照，写入报告便于审计。"""
-        snapshot: Dict[str, Any] = {}
+        snapshot: dict[str, Any] = {}
         if start_time is not None:
             snapshot["start_time"] = start_time.isoformat()
         if end_time is not None:
@@ -398,8 +397,8 @@ class TicketMiner:
     def _process_ticket(
         self,
         ticket: Ticket,
-        dedup_cache: Dict[str, List[Tuple[List[float], str]]],
-    ) -> Optional[MinedKnowledgeItem]:
+        dedup_cache: dict[str, list[tuple[list[float], str]]],
+    ) -> MinedKnowledgeItem | None:
         """处理单个工单：标注意图、抽取答案、判定去重。
 
         返回 None 表示答案为空跳过；
@@ -452,7 +451,7 @@ class TicketMiner:
         return ticket.description or ""
 
     @staticmethod
-    def _embed_text(text: str) -> List[float]:
+    def _embed_text(text: str) -> list[float]:
         """向量化文本，失败时返回空列表。
 
         走全局 embedding 服务单例，与流水线保持一致；
@@ -465,10 +464,10 @@ class TicketMiner:
 
     def _find_duplicate(
         self,
-        dedup_cache: Dict[str, List[Tuple[List[float], str]]],
+        dedup_cache: dict[str, list[tuple[list[float], str]]],
         intent: str,
-        embedding: List[float],
-    ) -> Optional[str]:
+        embedding: list[float],
+    ) -> str | None:
         """在同意图缓存中查找相似答案。
 
         相似度 >= dedup_threshold 时视为重复，返回被匹配的 ticket_id；
@@ -484,7 +483,7 @@ class TicketMiner:
         return None
 
     @staticmethod
-    def _cosine(vec_a: List[float], vec_b: List[float]) -> float:
+    def _cosine(vec_a: list[float], vec_b: list[float]) -> float:
         """计算两个向量的余弦相似度。
 
         长度不一致或零向量时返回 0.0，避免除零异常。
@@ -500,16 +499,14 @@ class TicketMiner:
 
     @staticmethod
     def _add_to_dedup_cache(
-        dedup_cache: Dict[str, List[Tuple[List[float], str]]],
+        dedup_cache: dict[str, list[tuple[list[float], str]]],
         item: MinedKnowledgeItem,
     ) -> None:
         """将已入库条目加入去重缓存，供后续同意图条目比对。"""
         embedding = TicketMiner._embed_text(item.answer)
         if not embedding:
             return
-        dedup_cache.setdefault(item.intent, []).append(
-            (embedding, item.source_ticket_id)
-        )
+        dedup_cache.setdefault(item.intent, []).append((embedding, item.source_ticket_id))
 
     # ------------------------------------------------------------------
     # 入库
@@ -569,7 +566,7 @@ class TicketMiner:
 
 
 # 模块级单例：进程内复用，避免重复初始化 tagger/extractor
-_ticket_miner: Optional[TicketMiner] = None
+_ticket_miner: TicketMiner | None = None
 _singleton_lock = threading.Lock()
 
 

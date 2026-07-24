@@ -11,13 +11,14 @@
 - 线程安全：缓存读写经 RLock 串行化，多线程并发安全
 - 向后兼容：不修改既有 schema，仅新增字段
 """
+
 from __future__ import annotations
 
 import hashlib
 import math
 import re
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.agents.llm_client import LLMClient, get_llm_client
 from app.core.logging import get_logger
@@ -43,15 +44,21 @@ EARLY_THRESHOLD = RECENT_TURNS + MID_TURNS  # 15
 SWITCH_SIMILARITY_THRESHOLD = 0.6
 # 用户明示切换的关键词，命中即视为切换（最高优先级）
 SWITCH_KEYWORDS = (
-    "换个问题", "问个别的", "另外", "切换", "换个话题",
-    "换个事情", "另外问", "换个问法", "另问",
+    "换个问题",
+    "问个别的",
+    "另外",
+    "切换",
+    "换个话题",
+    "换个事情",
+    "另外问",
+    "换个问法",
+    "另问",
 )
 
 # ==================== LLM 摘要 prompt ====================
 
 TURN_SUMMARY_PROMPT = (
-    "请把下面这轮客服对话压缩为一句摘要（不超过 30 字），"
-    "保留关键信息（用户意图/槽位/客服结论）：\n"
+    "请把下面这轮客服对话压缩为一句摘要（不超过 30 字），保留关键信息（用户意图/槽位/客服结论）：\n"
 )
 SESSION_SUMMARY_PROMPT = (
     "请把以下多轮客服对话压缩为一段摘要（不超过 200 字），"
@@ -67,7 +74,7 @@ def _hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _cosine_similarity(v1: List[float], v2: List[float]) -> float:
+def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
     """计算两个向量的余弦相似度。
 
     任一向量为空、长度不一致、或零向量时返回 0.0，
@@ -95,13 +102,13 @@ class ContextManager:
     内存优化：单轮摘要、会话级摘要均按内容哈希缓存，避免重复 LLM 调用。
     """
 
-    def __init__(self, llm_client: Optional[LLMClient] = None) -> None:
+    def __init__(self, llm_client: LLMClient | None = None) -> None:
         # 延迟取 LLM 单例，便于测试注入
         self._llm_client = llm_client
         # 单轮摘要缓存：turn_text_hash -> summary
-        self._turn_summary_cache: Dict[str, str] = {}
+        self._turn_summary_cache: dict[str, str] = {}
         # 会话级摘要缓存：early_history_hash -> summary
-        self._session_summary_cache: Dict[str, str] = {}
+        self._session_summary_cache: dict[str, str] = {}
         self._lock = threading.RLock()
 
     @property
@@ -126,7 +133,7 @@ class ContextManager:
         if session is None:
             return DialogContext(full_context_text="")
 
-        history: List[Dict[str, Any]] = list(session.get("history", []))
+        history: list[dict[str, Any]] = list(session.get("history", []))
         if not history:
             return DialogContext(full_context_text="")
 
@@ -138,14 +145,10 @@ class ContextManager:
 
         # 摘要生成：带缓存，避免重复 LLM 调用
         mid_summary = [self.summarize_turn(t) for t in mid_turns]
-        early_summary = (
-            self.summarize_session(early_turns) if early_turns else ""
-        )
+        early_summary = self.summarize_session(early_turns) if early_turns else ""
 
         recent_dicts = [dict(t) for t in recent_turns]
-        full_text = self._compose_context_text(
-            recent_dicts, mid_summary, early_summary
-        )
+        full_text = self._compose_context_text(recent_dicts, mid_summary, early_summary)
 
         return DialogContext(
             recent_turns=recent_dicts,
@@ -154,7 +157,7 @@ class ContextManager:
             full_context_text=full_text,
         )
 
-    def summarize_turn(self, turn: Dict[str, Any]) -> str:
+    def summarize_turn(self, turn: dict[str, Any]) -> str:
         """生成单轮对话摘要，带缓存避免重复 LLM 调用。
 
         LLM mock 模式下走规则摘要；真实模式下走 LLM 摘要并降级容错。
@@ -175,7 +178,7 @@ class ContextManager:
             self._turn_summary_cache[cache_key] = summary
         return summary
 
-    def summarize_session(self, turns: List[Dict[str, Any]]) -> str:
+    def summarize_session(self, turns: list[dict[str, Any]]) -> str:
         """生成会话级摘要（早期对话整体压缩）。
 
         缓存键基于所有 turn 拼接后的哈希，内容不变即命中缓存。
@@ -202,8 +205,8 @@ class ContextManager:
 
     @staticmethod
     def _partition_turns(
-        turns: List[Dict[str, Any]], total: int
-    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        turns: list[dict[str, Any]], total: int
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         """按 RECENT/MID/EARLY 阈值切分 turn 列表。
 
         返回 (recent, mid, early) 三段，分别对应原文/单句摘要/会话级摘要。
@@ -221,33 +224,35 @@ class ContextManager:
         return recent, mid, early
 
     @staticmethod
-    def _split_into_turns(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _split_into_turns(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """把 history 按 (user, assistant) 配对成 turn。
 
         末尾若 user 无配对 assistant（对话进行中），仍单独作为一轮保留，
         避免丢失用户最新输入。
         """
-        turns: List[Dict[str, Any]] = []
+        turns: list[dict[str, Any]] = []
         i = 0
         while i < len(history):
             user_msg = history[i]
             asst_msg = history[i + 1] if i + 1 < len(history) else None
-            turns.append({
-                "user": str(user_msg.get("content", "")),
-                "assistant": str(asst_msg.get("content", "")) if asst_msg else "",
-            })
+            turns.append(
+                {
+                    "user": str(user_msg.get("content", "")),
+                    "assistant": str(asst_msg.get("content", "")) if asst_msg else "",
+                }
+            )
             i += 2 if asst_msg else 1
         return turns
 
     @staticmethod
-    def _turn_to_text(turn: Dict[str, Any]) -> str:
+    def _turn_to_text(turn: dict[str, Any]) -> str:
         """把 turn 序列化为可读文本，供 LLM 摘要或缓存键生成。"""
         return f"用户：{turn.get('user', '')}\n客服：{turn.get('assistant', '')}"
 
     @staticmethod
     def _compose_context_text(
-        recent: List[Dict[str, Any]],
-        mid: List[str],
+        recent: list[dict[str, Any]],
+        mid: list[str],
         early: str,
     ) -> str:
         """把三层结果拼装为完整上下文文本。
@@ -255,24 +260,21 @@ class ContextManager:
         顺序：早期摘要 → 中期单句 → 近期原文，符合时间线，
         便于 LLM 理解对话演进。
         """
-        parts: List[str] = []
+        parts: list[str] = []
         if early:
             parts.append(f"【早期对话摘要】\n{early}")
         if mid:
             parts.append("【中期对话摘要】\n" + "\n".join(f"- {s}" for s in mid))
         if recent:
             recent_text = "\n".join(
-                f"用户：{t.get('user', '')} | 客服：{t.get('assistant', '')}"
-                for t in recent
+                f"用户：{t.get('user', '')} | 客服：{t.get('assistant', '')}" for t in recent
             )
             parts.append(f"【近期对话原文】\n{recent_text}")
         return "\n\n".join(parts)
 
     # ==================== LLM 摘要 ====================
 
-    def _llm_summarize_turn(
-        self, text: str, turn: Dict[str, Any]
-    ) -> str:
+    def _llm_summarize_turn(self, text: str, turn: dict[str, Any]) -> str:
         """调用 LLM 生成单轮摘要，失败时降级到规则。"""
         messages = [
             {"role": "system", "content": TURN_SUMMARY_PROMPT},
@@ -294,9 +296,7 @@ class ContextManager:
             logger.warning("LLM 单轮摘要失败，降级规则：%s", exc)
             return self._rule_summarize_turn(turn)
 
-    def _llm_summarize_session(
-        self, text: str, turns: List[Dict[str, Any]]
-    ) -> str:
+    def _llm_summarize_session(self, text: str, turns: list[dict[str, Any]]) -> str:
         """调用 LLM 生成会话级摘要，失败时降级到规则。"""
         messages = [
             {"role": "system", "content": SESSION_SUMMARY_PROMPT},
@@ -321,7 +321,7 @@ class ContextManager:
     # ==================== 规则摘要（mock 兜底）====================
 
     @staticmethod
-    def _rule_summarize_turn(turn: Dict[str, Any]) -> str:
+    def _rule_summarize_turn(turn: dict[str, Any]) -> str:
         """规则摘要：取用户首句 + 客服首句要点。
 
         无 LLM 时保证可用，关键词保留率约 80%，
@@ -340,11 +340,11 @@ class ContextManager:
         return "（无内容）"
 
     @staticmethod
-    def _rule_summarize_session(turns: List[Dict[str, Any]]) -> str:
+    def _rule_summarize_session(turns: list[dict[str, Any]]) -> str:
         """规则会话摘要：按时间顺序拼接每轮用户首句要点。"""
         if not turns:
             return ""
-        points: List[str] = []
+        points: list[str] = []
         for idx, turn in enumerate(turns, start=1):
             user_text = str(turn.get("user", "")).strip()
             user_first = re.split(r"[。！？\n]", user_text, maxsplit=1)[0][:20]
@@ -362,7 +362,7 @@ class ContextManager:
 
 
 # 模块级单例：ContextManager 内部缓存可复用，进程内不重复创建
-_context_manager: Optional[ContextManager] = None
+_context_manager: ContextManager | None = None
 
 
 def get_context_manager() -> ContextManager:
@@ -397,7 +397,7 @@ class IntentDetector:
         # embedding 服务延迟获取，便于测试注入
         self._embedding_service = embedding_service
         # embedding 缓存：text_hash -> vector
-        self._embedding_cache: Dict[str, List[float]] = {}
+        self._embedding_cache: dict[str, list[float]] = {}
         self._lock = threading.RLock()
 
     @property
@@ -409,6 +409,7 @@ class IntentDetector:
         if self._embedding_service is None:
             try:
                 from app.knowledge.embeddings import get_embedding_service
+
                 self._embedding_service = get_embedding_service()
             except Exception as exc:
                 logger.warning("EmbeddingService 不可用，相似度检测将返回 0：%s", exc)
@@ -419,7 +420,7 @@ class IntentDetector:
         self,
         query: str,
         session_id: str,
-        current_intent: Optional[str] = None,
+        current_intent: str | None = None,
     ) -> IntentSwitchResult:
         """检测当前 query 是否构成意图切换。
 
@@ -453,10 +454,7 @@ class IntentDetector:
                 return IntentSwitchResult(
                     switched=True,
                     new_intent=new_intent,
-                    reason=(
-                        f"语义相似度 {similarity:.2f} 低于阈值 "
-                        f"{SWITCH_SIMILARITY_THRESHOLD}"
-                    ),
+                    reason=(f"语义相似度 {similarity:.2f} 低于阈值 {SWITCH_SIMILARITY_THRESHOLD}"),
                     similarity=similarity,
                 )
 
@@ -468,9 +466,7 @@ class IntentDetector:
             similarity=similarity,
         )
 
-    def _compute_history_similarity(
-        self, query: str, session_id: str
-    ) -> float:
+    def _compute_history_similarity(self, query: str, session_id: str) -> float:
         """计算 query 与历史 user 消息的最大余弦相似度。
 
         取最近若干条 user 消息作为"历史主题"代表，
@@ -483,11 +479,9 @@ class IntentDetector:
         session = session_manager.get_session(session_id) or {}
         history = session.get("history", []) or []
         # 仅取 user 消息作为主题代表，避免客服回复干扰
-        recent_user_texts = [
-            str(h.get("content", ""))
-            for h in history
-            if h.get("role") == "user"
-        ][-3:]
+        recent_user_texts = [str(h.get("content", "")) for h in history if h.get("role") == "user"][
+            -3:
+        ]
         if not recent_user_texts:
             return 0.0
 
@@ -505,7 +499,7 @@ class IntentDetector:
                 max_sim = sim
         return max_sim
 
-    def _embed_cached(self, service: Any, text: str) -> List[float]:
+    def _embed_cached(self, service: Any, text: str) -> list[float]:
         """带缓存的 embedding，避免对同一文本重复向量化。
 
         缓存键为文本哈希，避免长字符串作 key 的内存开销。
@@ -539,6 +533,7 @@ class IntentDetector:
                 OFFENSIVE_KEYWORDS,
                 TICKET_KEYWORDS,
             )
+
             if any(w in query for w in OFFENSIVE_KEYWORDS):
                 return Intent.EMOTION_SENSITIVE.value
             if any(w in query for w in TICKET_KEYWORDS):
@@ -558,7 +553,7 @@ class IntentDetector:
 
 
 # 模块级单例：IntentDetector 缓存可复用
-_intent_detector: Optional[IntentDetector] = None
+_intent_detector: IntentDetector | None = None
 
 
 def get_intent_detector() -> IntentDetector:

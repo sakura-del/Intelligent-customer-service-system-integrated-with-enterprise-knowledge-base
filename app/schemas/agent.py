@@ -5,9 +5,10 @@
 方案录入、标记已解决、接手等端点。复用 schemas/escalation.py 中的
 EscalationCard / EscalationPriority / HumanSolutionRecord，避免重复定义。
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -21,15 +22,13 @@ class AgentSessionSummary(BaseModel):
     """
 
     session_id: str = Field(..., description="会话 ID")
-    user_id: Optional[str] = Field(None, description="用户标识")
-    priority: EscalationPriority = Field(
-        EscalationPriority.INFO, description="转接优先级"
-    )
+    user_id: str | None = Field(None, description="用户标识")
+    priority: EscalationPriority = Field(EscalationPriority.INFO, description="转接优先级")
     escalate_reason: str = Field("", description="转接原因")
     turn_count: int = Field(0, description="本次对话已进行轮数")
     created_at: str = Field("", description="会话创建时间")
-    agent_status: Optional[str] = Field(None, description="坐席侧状态")
-    assigned_agent_id: Optional[str] = Field(None, description="已分配坐席 ID")
+    agent_status: str | None = Field(None, description="坐席侧状态")
+    assigned_agent_id: str | None = Field(None, description="已分配坐席 ID")
 
 
 class AgentSessionDetail(BaseModel):
@@ -39,18 +38,14 @@ class AgentSessionDetail(BaseModel):
     """
 
     session_id: str = Field(..., description="会话 ID")
-    user_id: Optional[str] = Field(None, description="用户标识")
+    user_id: str | None = Field(None, description="用户标识")
     channel: str = Field("", description="接入渠道")
-    agent_status: Optional[str] = Field(None, description="坐席侧状态")
-    assigned_agent_id: Optional[str] = Field(None, description="已分配坐席 ID")
+    agent_status: str | None = Field(None, description="坐席侧状态")
+    assigned_agent_id: str | None = Field(None, description="已分配坐席 ID")
     turn_count: int = Field(0, description="本次对话已进行轮数")
-    emotion_score: Optional[float] = Field(None, description="用户情绪得分")
-    escalation_card: Optional[EscalationCard] = Field(
-        None, description="转接上下文卡片"
-    )
-    history: List[Dict[str, Any]] = Field(
-        default_factory=list, description="完整对话历史"
-    )
+    emotion_score: float | None = Field(None, description="用户情绪得分")
+    escalation_card: EscalationCard | None = Field(None, description="转接上下文卡片")
+    history: list[dict[str, Any]] = Field(default_factory=list, description="完整对话历史")
     created_at: str = Field("", description="会话创建时间")
 
 
@@ -89,9 +84,7 @@ class KnowledgeChunk(BaseModel):
 class KnowledgeRecommendResponse(BaseModel):
     """知识推荐响应。"""
 
-    chunks: List[KnowledgeChunk] = Field(
-        default_factory=list, description="知识片段列表"
-    )
+    chunks: list[KnowledgeChunk] = Field(default_factory=list, description="知识片段列表")
     total: int = Field(0, description="命中的片段总数")
 
 
@@ -107,12 +100,8 @@ class BusinessAssistResponse(BaseModel):
     业务异常不抛 5xx，降级为 result.error 字段。
     """
 
-    result: Dict[str, Any] = Field(
-        default_factory=dict, description="业务查询结果"
-    )
-    masked_fields: List[str] = Field(
-        default_factory=list, description="已脱敏字段名列表"
-    )
+    result: dict[str, Any] = Field(default_factory=dict, description="业务查询结果")
+    masked_fields: list[str] = Field(default_factory=list, description="已脱敏字段名列表")
 
 
 class SolutionSubmitRequest(BaseModel):
@@ -124,15 +113,13 @@ class SolutionSubmitRequest(BaseModel):
 
     question: str = Field(..., min_length=1, description="用户原始问题")
     solution: str = Field(..., min_length=1, description="人工给出的解决方案")
-    intent: Optional[str] = Field(
-        None, description="标注意图；不传时由系统自动识别"
-    )
+    intent: str | None = Field(None, description="标注意图；不传时由系统自动识别")
 
 
 class ResolveRequest(BaseModel):
     """标记已解决请求体。"""
 
-    note: Optional[str] = Field(None, description="解决备注，可选")
+    note: str | None = Field(None, description="解决备注，可选")
 
 
 class ResolveResponse(BaseModel):

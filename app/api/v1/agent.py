@@ -15,9 +15,9 @@
 - 鉴权统一通过 verify_api_key 依赖
 - 端点实现见 Task 4-7
 """
+
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -64,8 +64,8 @@ router = APIRouter(
 # =============================================================================
 
 
-@router.get("/sessions/pending", response_model=List[AgentSessionSummary])
-def list_pending_agent_sessions() -> List[AgentSessionSummary]:
+@router.get("/sessions/pending", response_model=list[AgentSessionSummary])
+def list_pending_agent_sessions() -> list[AgentSessionSummary]:
     """列出所有待接入会话，按 EscalationPriority 降序。
 
     供坐席工作台首屏展示待接入队列，
@@ -89,7 +89,7 @@ def get_agent_session(session_id: str) -> AgentSessionDetail:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
     escalation_card_dict = session.get("escalation_card")
-    escalation_card: Optional[EscalationCard] = None
+    escalation_card: EscalationCard | None = None
     if escalation_card_dict:
         # 缓存命中：从 dict 重建 EscalationCard，避免重复构建卡片
         try:
@@ -107,18 +107,12 @@ def get_agent_session(session_id: str) -> AgentSessionDetail:
         try:
             engine = get_escalation_engine()
             reason = (escalation_card_dict or {}).get("escalate_reason", "用户转接")
-            priority = (escalation_card_dict or {}).get(
-                "priority", EscalationPriority.INFO
-            )
+            priority = (escalation_card_dict or {}).get("priority", EscalationPriority.INFO)
             if isinstance(priority, str):
                 priority = EscalationPriority(priority)
-            escalation_card = engine.build_card(
-                session_id, reason=reason, priority=priority
-            )
+            escalation_card = engine.build_card(session_id, reason=reason, priority=priority)
             # 写回缓存避免重复构建
-            session_manager.update_session(
-                session_id, escalation_card=escalation_card.model_dump()
-            )
+            session_manager.update_session(session_id, escalation_card=escalation_card.model_dump())
         except Exception as exc:
             logger.warning("重建 EscalationCard 失败：%s", exc)
 
@@ -192,9 +186,7 @@ def send_agent_message(
     message_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
     logger.info("坐席消息已追加：session=%s message_id=%s", session_id, message_id)
-    return AgentMessageResponse(
-        message_id=message_id, timestamp=timestamp, role="assistant"
-    )
+    return AgentMessageResponse(message_id=message_id, timestamp=timestamp, role="assistant")
 
 
 # =============================================================================
@@ -241,9 +233,7 @@ def recommend_knowledge(
     )
 
 
-@router.post(
-    "/sessions/{session_id}/business-assist", response_model=BusinessAssistResponse
-)
+@router.post("/sessions/{session_id}/business-assist", response_model=BusinessAssistResponse)
 def assist_business_query(
     session_id: str,
     request: BusinessAssistRequest,
@@ -259,16 +249,12 @@ def assist_business_query(
 
     try:
         agent = get_business_agent()
-        result: BusinessResult = agent.execute(
-            query=request.query, session_id=session_id
-        )
+        result: BusinessResult = agent.execute(query=request.query, session_id=session_id)
         # BusinessResult.data 已脱敏，从 data 中提取敏感字段名供前端标识
         masked_fields = [
             k
             for k in result.data.keys()
-            if k.endswith("_masked")
-            or "phone" in k.lower()
-            or "id_card" in k.lower()
+            if k.endswith("_masked") or "phone" in k.lower() or "id_card" in k.lower()
         ]
         return BusinessAssistResponse(
             result={

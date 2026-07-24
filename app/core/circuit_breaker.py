@@ -12,12 +12,14 @@
 - HALF_OPEN → CLOSED：连续成功次数达到 success_threshold
 - HALF_OPEN → OPEN：任意一次失败立即回到 OPEN，重新计时
 """
+
 from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from app.core.logging import get_logger
 from app.schemas.observability import CircuitBreakerState, CircuitBreakerStats
@@ -36,7 +38,7 @@ class CircuitBreakerOpenError(Exception):
     携带熔断器名称与最近熔断时间，便于调用方记录与降级处理。
     """
 
-    def __init__(self, name: str, message: Optional[str] = None) -> None:
+    def __init__(self, name: str, message: str | None = None) -> None:
         self.name = name
         super().__init__(message or f"熔断器 [{name}] 处于 OPEN 状态，快速失败")
 
@@ -79,11 +81,11 @@ class CircuitBreaker:
         self._total_failures = 0
         self._total_successes = 0
         # 最近一次进入 OPEN 的单调时间戳（用于恢复判断，不受系统时钟调整影响）
-        self._opened_at_monotonic: Optional[float] = None
+        self._opened_at_monotonic: float | None = None
         # ISO 字符串版本，便于对外展示
-        self._last_opened_at_iso: Optional[str] = None
-        self._last_failure_at_iso: Optional[str] = None
-        self._last_success_at_iso: Optional[str] = None
+        self._last_opened_at_iso: str | None = None
+        self._last_failure_at_iso: str | None = None
+        self._last_success_at_iso: str | None = None
 
         self._lock = threading.RLock()
 
@@ -158,9 +160,7 @@ class CircuitBreaker:
             self._last_failure_at_iso = _now_iso()
 
             if self._state == CircuitBreakerState.HALF_OPEN:
-                self._transition_to_open_locked(
-                    reason="HALF_OPEN 探测失败，回到 OPEN"
-                )
+                self._transition_to_open_locked(reason="HALF_OPEN 探测失败，回到 OPEN")
             elif self._state == CircuitBreakerState.CLOSED:
                 if self._failure_count >= self.failure_threshold:
                     self._transition_to_open_locked(
@@ -249,7 +249,7 @@ class CircuitBreakerRegistry:
     """
 
     def __init__(self) -> None:
-        self._breakers: Dict[str, CircuitBreaker] = {}
+        self._breakers: dict[str, CircuitBreaker] = {}
         self._lock = threading.RLock()
 
     def get_or_create(
@@ -277,12 +277,12 @@ class CircuitBreakerRegistry:
             logger.info("注册熔断器 [%s]", name)
             return breaker
 
-    def get(self, name: str) -> Optional[CircuitBreaker]:
+    def get(self, name: str) -> CircuitBreaker | None:
         """按名查询熔断器，不存在返回 None。"""
         with self._lock:
             return self._breakers.get(name)
 
-    def list_all(self) -> Dict[str, CircuitBreakerStats]:
+    def list_all(self) -> dict[str, CircuitBreakerStats]:
         """返回所有熔断器的统计快照，按 name 索引。"""
         with self._lock:
             return {name: breaker.stats() for name, breaker in self._breakers.items()}
@@ -303,7 +303,7 @@ class CircuitBreakerRegistry:
 
 
 # 模块级单例：进程内复用，避免每个调用点各起一套注册中心
-_registry: Optional[CircuitBreakerRegistry] = None
+_registry: CircuitBreakerRegistry | None = None
 _registry_lock = threading.Lock()
 
 

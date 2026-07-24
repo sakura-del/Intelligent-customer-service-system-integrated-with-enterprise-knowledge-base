@@ -8,9 +8,8 @@
 - 单条详情记录 answer/contexts/四项指标，便于排查单条用例质量；
 - 报告摘要与详情分离：列表接口返回摘要，详情接口返回完整报告。
 """
-from __future__ import annotations
 
-from typing import Dict, List, Optional
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
@@ -30,12 +29,8 @@ class RagasTestCase(BaseModel):
 class RagasTestSet(BaseModel):
     """RAGAS 测试集：用例列表 + 元信息。"""
 
-    cases: List[RagasTestCase] = Field(
-        default_factory=list, description="用例列表"
-    )
-    meta: Dict[str, str] = Field(
-        default_factory=dict, description="元信息，如版本、来源"
-    )
+    cases: list[RagasTestCase] = Field(default_factory=list, description="用例列表")
+    meta: dict[str, str] = Field(default_factory=dict, description="元信息，如版本、来源")
 
 
 class RagasCaseDetail(BaseModel):
@@ -48,20 +43,12 @@ class RagasCaseDetail(BaseModel):
     question: str = Field("", description="测试问题")
     ground_truth: str = Field("", description="标准答案")
     answer: str = Field("", description="RAG Agent 生成的答案")
-    contexts: List[str] = Field(
-        default_factory=list, description="检索召回的上下文片段文本列表"
-    )
+    contexts: list[str] = Field(default_factory=list, description="检索召回的上下文片段文本列表")
     faithfulness: float = Field(0.0, description="忠实度：答案是否基于上下文")
     answer_relevancy: float = Field(0.0, description="答案相关性：是否回答了问题")
-    context_precision: float = Field(
-        0.0, description="上下文精确度：相关上下文占比"
-    )
-    context_recall: float = Field(
-        0.0, description="上下文召回率：标准答案是否被上下文覆盖"
-    )
-    error: Optional[str] = Field(
-        None, description="异常信息，正常时为空"
-    )
+    context_precision: float = Field(0.0, description="上下文精确度：相关上下文占比")
+    context_recall: float = Field(0.0, description="上下文召回率：标准答案是否被上下文覆盖")
+    error: str | None = Field(None, description="异常信息，正常时为空")
 
 
 class RagasEvaluationReport(BaseModel):
@@ -72,17 +59,11 @@ class RagasEvaluationReport(BaseModel):
     total_queries: int = Field(0, description="测试集查询总数")
     faithfulness: float = Field(0.0, description="忠实度聚合得分（0-1）")
     answer_relevancy: float = Field(0.0, description="答案相关性聚合得分（0-1）")
-    context_precision: float = Field(
-        0.0, description="上下文精确度聚合得分（0-1）"
-    )
-    context_recall: float = Field(
-        0.0, description="上下文召回率聚合得分（0-1）"
-    )
+    context_precision: float = Field(0.0, description="上下文精确度聚合得分（0-1）")
+    context_recall: float = Field(0.0, description="上下文召回率聚合得分（0-1）")
     duration_seconds: float = Field(0.0, description="评测耗时（秒）")
-    source: str = Field(
-        "default", description="测试集来源：default / external"
-    )
-    case_details: List[RagasCaseDetail] = Field(
+    source: str = Field("default", description="测试集来源：default / external")
+    case_details: list[RagasCaseDetail] = Field(
         default_factory=list, description="单条用例详情列表"
     )
 
@@ -94,12 +75,8 @@ class RagasRunRequest(BaseModel):
     top_k 为空时使用 RAGAgent 默认 Top-K。
     """
 
-    testset_path: Optional[str] = Field(
-        None, description="外部测试集 JSON 路径，为空时使用内置默认集"
-    )
-    top_k: Optional[int] = Field(
-        None, ge=1, le=50, description="检索 Top-K，为空时使用默认值"
-    )
+    testset_path: str | None = Field(None, description="外部测试集 JSON 路径，为空时使用内置默认集")
+    top_k: int | None = Field(None, ge=1, le=50, description="检索 Top-K，为空时使用默认值")
 
 
 class RagasReportSummary(BaseModel):
@@ -116,6 +93,4 @@ class RagasReportSummary(BaseModel):
     context_precision: float = Field(0.0, description="上下文精确度聚合得分")
     context_recall: float = Field(0.0, description="上下文召回率聚合得分")
     duration_seconds: float = Field(0.0, description="评测耗时（秒）")
-    source: str = Field(
-        "default", description="测试集来源：default / external"
-    )
+    source: str = Field("default", description="测试集来源：default / external")

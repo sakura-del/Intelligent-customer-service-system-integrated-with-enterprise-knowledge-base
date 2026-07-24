@@ -3,9 +3,10 @@
 封装 embed_query → vectorstore.query → 阈值过滤的完整召回链路，
 向 RAG Agent 提供统一 retrieve 接口，屏蔽底层向量库细节。
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -25,8 +26,8 @@ class KnowledgeRetriever:
 
     def __init__(
         self,
-        vector_store: Optional[VectorStore] = None,
-        similarity_threshold: Optional[float] = None,
+        vector_store: VectorStore | None = None,
+        similarity_threshold: float | None = None,
     ) -> None:
         # 延迟取单例，避免在导入阶段触发模型加载
         self._vector_store = vector_store
@@ -49,9 +50,9 @@ class KnowledgeRetriever:
         self,
         question: str,
         top_k: int = 5,
-        score_threshold: Optional[float] = None,
-        where: Optional[Dict[str, Any]] = None,
-    ) -> List[RetrievedChunk]:
+        score_threshold: float | None = None,
+        where: dict[str, Any] | None = None,
+    ) -> list[RetrievedChunk]:
         """检索与 question 最相关的知识片段。
 
         流程：向量化查询 → 向量库召回 → 阈值过滤 → 转 RetrievedChunk。
@@ -60,11 +61,7 @@ class KnowledgeRetriever:
         if not question or not question.strip():
             return []
 
-        threshold = (
-            score_threshold
-            if score_threshold is not None
-            else self._similarity_threshold
-        )
+        threshold = score_threshold if score_threshold is not None else self._similarity_threshold
 
         # 1. 把问题向量化；失败时返回空列表，避免拖垮后续生成
         embedding_service = get_embedding_service()
@@ -82,7 +79,7 @@ class KnowledgeRetriever:
         )
 
         # 3. 仅保留 RAG 必要字段，丢弃 id 等内部结构，控制下游 prompt token
-        retrieved: List[RetrievedChunk] = []
+        retrieved: list[RetrievedChunk] = []
         for hit in raw_hits:
             metadata = hit.get("metadata") or {}
             retrieved.append(
@@ -107,7 +104,7 @@ class KnowledgeRetriever:
 
 
 # 模块级单例：检索器无状态，进程内复用即可
-_retriever: Optional[KnowledgeRetriever] = None
+_retriever: KnowledgeRetriever | None = None
 
 
 def get_retriever() -> KnowledgeRetriever:

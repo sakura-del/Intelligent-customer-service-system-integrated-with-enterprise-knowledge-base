@@ -9,6 +9,7 @@
 - 持久化：实验配置与指标持久化到 {CHROMA_PERSIST_DIR}/experiments.json
 - 降级：加载失败或未配置实验时所有用户进 control 组
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -16,7 +17,6 @@ import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -76,9 +76,9 @@ class ExperimentManager:
         self._store_path = Path(self._persist_dir) / EXPERIMENTS_FILENAME
         self._lock = threading.RLock()
         # 实验配置：name -> Experiment
-        self._experiments: Dict[str, Experiment] = {}
+        self._experiments: dict[str, Experiment] = {}
         # 指标记录：experiment_name -> variant -> metric -> [values]
-        self._metrics: Dict[str, Dict[str, Dict[str, List[float]]]] = {}
+        self._metrics: dict[str, dict[str, dict[str, list[float]]]] = {}
         self._load()
 
     # ------------------------------------------------------------------
@@ -95,9 +95,7 @@ class ExperimentManager:
                 return
             data = json.loads(raw)
             exp_data = data.get("experiments", {}) or {}
-            self._experiments = {
-                name: Experiment(**item) for name, item in exp_data.items()
-            }
+            self._experiments = {name: Experiment(**item) for name, item in exp_data.items()}
             # 指标直接保留为 dict 结构，避免反复序列化
             self._metrics = data.get("metrics", {}) or {}
             logger.info(
@@ -116,14 +114,10 @@ class ExperimentManager:
         try:
             self._store_path.parent.mkdir(parents=True, exist_ok=True)
             payload = {
-                "experiments": {
-                    name: exp.model_dump() for name, exp in self._experiments.items()
-                },
+                "experiments": {name: exp.model_dump() for name, exp in self._experiments.items()},
                 "metrics": self._metrics,
             }
-            tmp_path = self._store_path.with_suffix(
-                self._store_path.suffix + ".tmp"
-            )
+            tmp_path = self._store_path.with_suffix(self._store_path.suffix + ".tmp")
             tmp_path.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
@@ -141,8 +135,8 @@ class ExperimentManager:
         self,
         name: str,
         description: str,
-        variants: List[Variant],
-        target_metrics: Optional[List[str]] = None,
+        variants: list[Variant],
+        target_metrics: list[str] | None = None,
         enabled: bool = True,
     ) -> Experiment:
         """创建实验，若已存在则覆盖。
@@ -174,9 +168,7 @@ class ExperimentManager:
         )
         return experiment.model_copy()
 
-    def create_experiment_from_request(
-        self, request: CreateExperimentRequest
-    ) -> Experiment:
+    def create_experiment_from_request(self, request: CreateExperimentRequest) -> Experiment:
         """从 API 请求体创建实验，便于路由层调用。"""
         return self.create_experiment(
             name=request.name,
@@ -186,13 +178,13 @@ class ExperimentManager:
             enabled=request.enabled,
         )
 
-    def get_experiment(self, name: str) -> Optional[Experiment]:
+    def get_experiment(self, name: str) -> Experiment | None:
         """查询实验配置，不存在返回 None。"""
         with self._lock:
             exp = self._experiments.get(name)
             return exp.model_copy() if exp is not None else None
 
-    def list_experiments(self) -> List[Experiment]:
+    def list_experiments(self) -> list[Experiment]:
         """列出全部实验，按创建顺序返回。"""
         with self._lock:
             return [exp.model_copy() for exp in self._experiments.values()]
@@ -265,7 +257,7 @@ class ExperimentManager:
             values.append(float(value))
             self._save()
 
-    def get_results(self, experiment_name: str) -> Optional[ExperimentResults]:
+    def get_results(self, experiment_name: str) -> ExperimentResults | None:
         """返回实验各分组指标统计（均值/标准差/样本数）。
 
         实验不存在时返回 None；存在但无指标记录时返回空 metrics。
@@ -276,9 +268,9 @@ class ExperimentManager:
                 return None
             exp_metrics = self._metrics.get(experiment_name, {})
             variant_names = [v.name for v in exp.variants]
-            metrics_result: Dict[str, Dict[str, VariantMetricStats]] = {}
+            metrics_result: dict[str, dict[str, VariantMetricStats]] = {}
             for variant_name, metric_map in exp_metrics.items():
-                stats_map: Dict[str, VariantMetricStats] = {}
+                stats_map: dict[str, VariantMetricStats] = {}
                 for metric_name, values in metric_map.items():
                     stats_map[metric_name] = self._compute_stats(values)
                 metrics_result[variant_name] = stats_map
@@ -290,7 +282,7 @@ class ExperimentManager:
             )
 
     @staticmethod
-    def _compute_stats(values: List[float]) -> VariantMetricStats:
+    def _compute_stats(values: list[float]) -> VariantMetricStats:
         """计算均值/标准差/样本数，空列表返回零值。"""
         if not values:
             return VariantMetricStats()
@@ -301,7 +293,7 @@ class ExperimentManager:
             std = 0.0
         else:
             variance = sum((v - mean) ** 2 for v in values) / count
-            std = variance ** 0.5
+            std = variance**0.5
         return VariantMetricStats(
             mean=round(mean, 6),
             std=round(std, 6),
@@ -325,7 +317,7 @@ class ExperimentManager:
                 logger.debug("清理实验配置文件失败：%s", exc)
 
     @staticmethod
-    def _normalize_variants(variants: List[Variant]) -> List[Variant]:
+    def _normalize_variants(variants: list[Variant]) -> list[Variant]:
         """规范化分组列表：保证至少含 control 分组。
 
         若传入列表为空或无 control，则前置一个默认 control 分组，
@@ -343,7 +335,7 @@ class ExperimentManager:
 # 单例管理
 # ----------------------------------------------------------------------
 
-_experiment_manager: Optional[ExperimentManager] = None
+_experiment_manager: ExperimentManager | None = None
 _experiment_singleton_lock = threading.Lock()
 
 

@@ -9,6 +9,7 @@
 所有端点复用全局 verify_api_key 依赖鉴权，
 结果通过 UpdateResultResponse 返回，便于前端展示与监控。
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

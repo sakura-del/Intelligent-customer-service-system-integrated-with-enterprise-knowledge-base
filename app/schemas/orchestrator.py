@@ -3,8 +3,9 @@
 定义意图识别、子任务拆解、调度结果等数据契约，
 作为 OrchestratorAgent 内部各环节之间以及对外交互的统一结构。
 """
+
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -32,7 +33,7 @@ class SubTask(BaseModel):
 
     agent_name: str = Field(..., description="负责处理的 agent 名称")
     input: str = Field(..., description="子任务输入，通常是原始问题或其切片")
-    result: Optional[str] = Field(
+    result: str | None = Field(
         None,
         description="agent 处理结果，未执行时为空",
     )
@@ -52,7 +53,7 @@ class IntentResult(BaseModel):
         le=1.0,
         description="意图置信度，0-1 之间",
     )
-    sub_tasks: List[SubTask] = Field(
+    sub_tasks: list[SubTask] = Field(
         default_factory=list,
         description="拆解出的子任务列表，简单问题仅含一项",
     )
@@ -71,7 +72,7 @@ class OrchestratorResult(BaseModel):
 
     reply: str = Field(..., description="给用户的最终回复文本")
     intent: Intent = Field(Intent.UNKNOWN, description="本轮主意图")
-    sub_tasks: List[SubTask] = Field(
+    sub_tasks: list[SubTask] = Field(
         default_factory=list,
         description="本轮执行的子任务及其结果",
     )
@@ -79,13 +80,13 @@ class OrchestratorResult(BaseModel):
         False,
         description="是否标记转人工",
     )
-    session_id: Optional[str] = Field(None, description="会话 ID")
+    session_id: str | None = Field(None, description="会话 ID")
     turn_count: int = Field(0, description="当前会话轮数")
     failed_attempts: int = Field(
         0,
         description="连续未解决次数，达到阈值触发转人工",
     )
-    metadata: Dict[str, Any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="附加信息，便于扩展字段（如情绪分等）",
     )

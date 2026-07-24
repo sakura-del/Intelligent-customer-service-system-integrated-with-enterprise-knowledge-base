@@ -14,6 +14,7 @@
 - 降级策略：告警/记录失败时仅记日志，不影响主流程
 - 延迟计算：健康检查延迟到调用时执行，避免启动期阻塞
 """
+
 from __future__ import annotations
 
 import json
@@ -23,10 +24,11 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -72,7 +74,7 @@ class Alert(BaseModel):
     level: AlertLevel = Field(..., description="告警级别")
     source: str = Field(..., description="告警来源，如 token_usage/circuit_breaker")
     message: str = Field(..., description="告警消息")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="附加元数据")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="附加元数据")
     timestamp: str = Field(..., description="告警时间（ISO8601 UTC）")
 
 
@@ -101,10 +103,10 @@ class AlertManager:
     DEFAULT_MAX_ALERTS = 1000
 
     def __init__(self, max_alerts: int = DEFAULT_MAX_ALERTS) -> None:
-        self._alerts: Deque[Alert] = deque(maxlen=max_alerts)
+        self._alerts: deque[Alert] = deque(maxlen=max_alerts)
         # 抑制缓存：(level, source, message) -> 最近一次记录的单调时间戳
         # 使用 monotonic 避免系统时钟调整导致抑制失效
-        self._suppression: Dict[Tuple[AlertLevel, str, str], float] = {}
+        self._suppression: dict[tuple[AlertLevel, str, str], float] = {}
         self._lock = threading.RLock()
 
     def record_alert(
@@ -112,8 +114,8 @@ class AlertManager:
         level: AlertLevel,
         source: str,
         message: str,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Alert]:
+        metadata: dict[str, Any] | None = None,
+    ) -> Alert | None:
         """记录一条告警。
 
         命中抑制窗口时仅输出日志不入队，返回 None；
@@ -156,10 +158,10 @@ class AlertManager:
 
     def list_alerts(
         self,
-        level: Optional[AlertLevel] = None,
-        source: Optional[str] = None,
-        since: Optional[str] = None,
-    ) -> List[Alert]:
+        level: AlertLevel | None = None,
+        source: str | None = None,
+        since: str | None = None,
+    ) -> list[Alert]:
         """查询告警列表。
 
         全部参数可选，未指定的维度不做过滤。
@@ -167,7 +169,7 @@ class AlertManager:
         返回浅拷贝列表，避免外部修改内部状态。
         """
         with self._lock:
-            results: List[Alert] = []
+            results: list[Alert] = []
             for alert in self._alerts:
                 if level is not None and alert.level != level:
                     continue
@@ -183,7 +185,7 @@ class AlertManager:
         level: AlertLevel,
         source: str,
         message: str,
-        metadata: Dict[str, Any],
+        metadata: dict[str, Any],
         suppressed: bool,
     ) -> None:
         """按级别输出告警日志。
@@ -209,7 +211,7 @@ class AlertManager:
 
 
 # 模块级单例：告警管理器
-_alert_manager: Optional[AlertManager] = None
+_alert_manager: AlertManager | None = None
 _alert_manager_lock = threading.Lock()
 
 
@@ -257,7 +259,7 @@ class HealthReport(BaseModel):
     """健康检查聚合报告。"""
 
     overall: HealthStatus = Field(..., description="整体健康状态")
-    items: List[HealthItem] = Field(default_factory=list, description="各依赖检查结果")
+    items: list[HealthItem] = Field(default_factory=list, description="各依赖检查结果")
     checked_at: str = Field(..., description="报告生成时间（ISO）")
 
 
@@ -282,14 +284,14 @@ class HealthChecker:
         """
         # 检查项列表：name -> 检查函数
         # 在此声明而非构造时绑定，避免导入阶段触发依赖初始化
-        checks: List[Tuple[str, Callable[[], Tuple[HealthStatus, str]]]] = [
+        checks: list[tuple[str, Callable[[], tuple[HealthStatus, str]]]] = [
             ("llm", self._check_llm),
             ("vector_store", self._check_vector_store),
             ("redis", self._check_redis),
             ("disk_space", self._check_disk_space),
         ]
 
-        items: List[HealthItem] = []
+        items: list[HealthItem] = []
         for name, check_func in checks:
             item = self._safe_check(name, check_func)
             items.append(item)
@@ -298,9 +300,7 @@ class HealthChecker:
         return HealthReport(overall=overall, items=items, checked_at=_now_iso())
 
     @staticmethod
-    def _safe_check(
-        name: str, check_func: Callable[[], Tuple[HealthStatus, str]]
-    ) -> HealthItem:
+    def _safe_check(name: str, check_func: Callable[[], tuple[HealthStatus, str]]) -> HealthItem:
         """执行单项检查，捕获所有异常。
 
         检查函数应返回 (status, message) 元组；
@@ -322,7 +322,7 @@ class HealthChecker:
         )
 
     @staticmethod
-    def _compute_overall(items: List[HealthItem]) -> HealthStatus:
+    def _compute_overall(items: list[HealthItem]) -> HealthStatus:
         """根据各检查项汇总整体健康状态。
 
         - 全部 HEALTHY：整体 HEALTHY
@@ -341,7 +341,7 @@ class HealthChecker:
     # 各依赖检查实现
     # ------------------------------------------------------------------
     @staticmethod
-    def _check_llm() -> Tuple[HealthStatus, str]:
+    def _check_llm() -> tuple[HealthStatus, str]:
         """检查 LLM 客户端可用性。
 
         mock 模式视为 HEALTHY（开发态可用），
@@ -358,7 +358,7 @@ class HealthChecker:
             return HealthStatus.UNHEALTHY, f"LLM 客户端不可用：{exc}"
 
     @staticmethod
-    def _check_vector_store() -> Tuple[HealthStatus, str]:
+    def _check_vector_store() -> tuple[HealthStatus, str]:
         """检查向量库连接与集合可访问性。"""
         try:
             from app.knowledge.vectorstore import get_vector_store
@@ -374,7 +374,7 @@ class HealthChecker:
             return HealthStatus.UNHEALTHY, f"向量库不可用：{exc}"
 
     @staticmethod
-    def _check_redis() -> Tuple[HealthStatus, str]:
+    def _check_redis() -> tuple[HealthStatus, str]:
         """检查 Redis 连接。
 
         未安装 redis 库时返回 UNKNOWN（开发态常见，非故障）；
@@ -388,9 +388,7 @@ class HealthChecker:
         try:
             from app.core.config import get_settings
 
-            client = redis_lib.Redis.from_url(
-                get_settings().REDIS_URL, decode_responses=True
-            )
+            client = redis_lib.Redis.from_url(get_settings().REDIS_URL, decode_responses=True)
             try:
                 client.ping()
             finally:
@@ -400,7 +398,7 @@ class HealthChecker:
             return HealthStatus.UNHEALTHY, f"Redis 不可用：{exc}"
 
     @staticmethod
-    def _check_disk_space() -> Tuple[HealthStatus, str]:
+    def _check_disk_space() -> tuple[HealthStatus, str]:
         """检查持久化目录所在磁盘剩余空间。
 
         低于 1GB 视为 UNHEALTHY，避免持久化失败导致数据丢失。
@@ -414,7 +412,7 @@ class HealthChecker:
             # 目录不存在时检查父目录所在磁盘
             check_dir = target_dir if os.path.exists(target_dir) else "."
             usage = shutil.disk_usage(check_dir)
-            free_gb = usage.free / (1024 ** 3)
+            free_gb = usage.free / (1024**3)
             if free_gb < 1.0:
                 return (
                     HealthStatus.UNHEALTHY,
@@ -426,7 +424,7 @@ class HealthChecker:
 
 
 # 模块级单例：健康检查器
-_health_checker: Optional[HealthChecker] = None
+_health_checker: HealthChecker | None = None
 _health_checker_lock = threading.Lock()
 
 
@@ -472,13 +470,11 @@ class TokenUsageStats(BaseModel):
     total_completion_tokens: int = Field(0, description="窗口内 completion token 总数")
     total_tokens: int = Field(0, description="窗口内 total token 总数")
     call_count: int = Field(0, description="窗口内 LLM 调用次数")
-    by_model: Dict[str, Dict[str, int]] = Field(
+    by_model: dict[str, dict[str, int]] = Field(
         default_factory=dict, description="按 model 维度统计"
     )
-    by_user: Dict[str, Dict[str, int]] = Field(
-        default_factory=dict, description="按 user 维度统计"
-    )
-    by_endpoint: Dict[str, Dict[str, int]] = Field(
+    by_user: dict[str, dict[str, int]] = Field(default_factory=dict, description="按 user 维度统计")
+    by_endpoint: dict[str, dict[str, int]] = Field(
         default_factory=dict, description="按 endpoint 维度统计"
     )
     window_start: str = Field("", description="窗口起始时间（ISO）")
@@ -497,8 +493,8 @@ class TokenUsageRecord:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    user_id: Optional[str] = None
-    endpoint: Optional[str] = None
+    user_id: str | None = None
+    endpoint: str | None = None
 
 
 class TokenUsageTracker:
@@ -513,8 +509,8 @@ class TokenUsageTracker:
     持久化失败时内存中保留，下次重试。
     """
 
-    def __init__(self, persist_path: Optional[str] = None) -> None:
-        self._records: Deque[TokenUsageRecord] = deque(maxlen=MAX_TOKEN_RECORDS)
+    def __init__(self, persist_path: str | None = None) -> None:
+        self._records: deque[TokenUsageRecord] = deque(maxlen=MAX_TOKEN_RECORDS)
         self._lock = threading.RLock()
         self._last_flush_monotonic = time.monotonic()
         self._dirty = False
@@ -524,7 +520,7 @@ class TokenUsageTracker:
         self._load_persisted()
 
     @staticmethod
-    def _resolve_persist_path() -> Optional[str]:
+    def _resolve_persist_path() -> str | None:
         """从 settings 拼接持久化路径，失败时返回 None。"""
         try:
             from app.core.config import get_settings
@@ -543,8 +539,8 @@ class TokenUsageTracker:
         model: str,
         prompt_tokens: int,
         completion_tokens: int,
-        user_id: Optional[str] = None,
-        endpoint: Optional[str] = None,
+        user_id: str | None = None,
+        endpoint: str | None = None,
     ) -> None:
         """记录一次 LLM 调用的 token 用量。
 
@@ -600,7 +596,7 @@ class TokenUsageTracker:
 
     @staticmethod
     def _aggregate_locked(
-        records: List[TokenUsageRecord],
+        records: list[TokenUsageRecord],
         window: str,
         start: datetime,
         end: datetime,
@@ -621,9 +617,7 @@ class TokenUsageTracker:
             total_completion_tokens=total_completion,
             total_tokens=total,
             call_count=len(records),
-            by_model=TokenUsageTracker._aggregate_by_key(
-                records, lambda r: r.model
-            ),
+            by_model=TokenUsageTracker._aggregate_by_key(records, lambda r: r.model),
             by_user=TokenUsageTracker._aggregate_by_key(
                 records, lambda r: r.user_id or "anonymous"
             ),
@@ -636,10 +630,10 @@ class TokenUsageTracker:
 
     @staticmethod
     def _aggregate_by_key(
-        records: List[TokenUsageRecord], key_func: Callable[[TokenUsageRecord], str]
-    ) -> Dict[str, Dict[str, int]]:
+        records: list[TokenUsageRecord], key_func: Callable[[TokenUsageRecord], str]
+    ) -> dict[str, dict[str, int]]:
         """按指定 key 聚合 prompt/completion/total/call_count。"""
-        result: Dict[str, Dict[str, int]] = {}
+        result: dict[str, dict[str, int]] = {}
         for r in records:
             key = key_func(r)
             bucket = result.setdefault(
@@ -711,7 +705,7 @@ class TokenUsageTracker:
         try:
             if not os.path.exists(self._persist_path):
                 return
-            with open(self._persist_path, "r", encoding="utf-8") as f:
+            with open(self._persist_path, encoding="utf-8") as f:
                 data = json.load(f)
             records = data.get("records", [])
             if not isinstance(records, list):
@@ -728,7 +722,7 @@ class TokenUsageTracker:
             logger.warning("加载 Token 用量历史记录失败：%s", exc)
 
     @staticmethod
-    def _deserialize_record(item: Any) -> Optional[TokenUsageRecord]:
+    def _deserialize_record(item: Any) -> TokenUsageRecord | None:
         """反序列化单条记录，字段缺失或格式错误时返回 None。"""
         if not isinstance(item, dict):
             return None
@@ -801,7 +795,7 @@ class TokenUsageTracker:
 
 
 # 模块级单例：Token 用量追踪器
-_token_tracker: Optional[TokenUsageTracker] = None
+_token_tracker: TokenUsageTracker | None = None
 _token_tracker_lock = threading.Lock()
 
 

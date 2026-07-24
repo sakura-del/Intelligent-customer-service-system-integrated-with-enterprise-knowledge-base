@@ -14,6 +14,7 @@
 线程安全：评测状态与报告缓存用 RLock 保护。
 降级策略：测试集加载失败用内置默认集；检索异常记为 miss；空库返回全零指标。
 """
+
 from __future__ import annotations
 
 import json
@@ -22,7 +23,6 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -52,22 +52,16 @@ class TestCase(BaseModel):
     """
 
     query: str = Field(..., description="测试查询文本")
-    expected_sources: List[str] = Field(
-        default_factory=list, description="期望命中的来源列表"
-    )
-    expected_keywords: List[str] = Field(
-        default_factory=list, description="期望答案包含的关键词"
-    )
+    expected_sources: list[str] = Field(default_factory=list, description="期望命中的来源列表")
+    expected_keywords: list[str] = Field(default_factory=list, description="期望答案包含的关键词")
     should_hit: bool = Field(True, description="该用例是否应命中知识库")
 
 
 class TestSet(BaseModel):
     """测试集：用例列表 + 元信息。"""
 
-    cases: List[TestCase] = Field(default_factory=list, description="用例列表")
-    meta: Dict[str, str] = Field(
-        default_factory=dict, description="元信息，如版本、说明"
-    )
+    cases: list[TestCase] = Field(default_factory=list, description="用例列表")
+    meta: dict[str, str] = Field(default_factory=dict, description="元信息，如版本、说明")
 
 
 class CaseDetail(BaseModel):
@@ -76,16 +70,10 @@ class CaseDetail(BaseModel):
     query: str = Field("", description="查询文本")
     should_hit: bool = Field(True, description="是否应命中")
     hit: bool = Field(False, description="实际是否命中期望来源")
-    top_sources: List[str] = Field(
-        default_factory=list, description="检索 Top-K 来源列表"
-    )
-    first_relevant_rank: int = Field(
-        -1, description="第一个相关结果排名（1-based），-1 表示未命中"
-    )
-    relevant_count: int = Field(
-        0, description="Top-K 中相关结果数量"
-    )
-    error: Optional[str] = Field(None, description="异常信息，正常时为空")
+    top_sources: list[str] = Field(default_factory=list, description="检索 Top-K 来源列表")
+    first_relevant_rank: int = Field(-1, description="第一个相关结果排名（1-based），-1 表示未命中")
+    relevant_count: int = Field(0, description="Top-K 中相关结果数量")
+    error: str | None = Field(None, description="异常信息，正常时为空")
 
 
 class EvaluationReport(BaseModel):
@@ -101,12 +89,8 @@ class EvaluationReport(BaseModel):
     mrr: float = Field(0.0, description="MRR 平均倒数排名")
     hallucination_rate: float = Field(0.0, description="幻觉率")
     duration_seconds: float = Field(0.0, description="评测耗时（秒）")
-    source: str = Field(
-        "default", description="测试集来源：default / external"
-    )
-    case_details: List[CaseDetail] = Field(
-        default_factory=list, description="单条用例详情"
-    )
+    source: str = Field("default", description="测试集来源：default / external")
+    case_details: list[CaseDetail] = Field(default_factory=list, description="单条用例详情")
 
 
 # ----------------------------------------------------------------------
@@ -338,9 +322,9 @@ class EvaluationRunner:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         # 报告缓存：report_id -> EvaluationReport，避免重复读盘
-        self._report_cache: Dict[str, EvaluationReport] = {}
+        self._report_cache: dict[str, EvaluationReport] = {}
 
-    def load_testset(self, path: Optional[str] = None) -> TestSet:
+    def load_testset(self, path: str | None = None) -> TestSet:
         """加载测试集，path 为空或加载失败时用内置默认集。"""
         if not path:
             return DEFAULT_TESTSET.model_copy()
@@ -351,25 +335,21 @@ class EvaluationRunner:
             testset.meta["source"] = f"external:{path}"
             return testset
         except Exception as exc:
-            logger.warning(
-                "加载外部测试集失败，降级到默认集：%s path=%s", exc, path
-            )
+            logger.warning("加载外部测试集失败，降级到默认集：%s path=%s", exc, path)
             return DEFAULT_TESTSET.model_copy()
 
     def run(
         self,
-        testset: Optional[TestSet] = None,
-        top_k: Optional[int] = None,
+        testset: TestSet | None = None,
+        top_k: int | None = None,
     ) -> EvaluationReport:
         """执行评测：对每条用例检索 → 计算指标 → 持久化报告。"""
         with self._lock:
             effective_testset = testset or DEFAULT_TESTSET
             effective_top_k = top_k or self._resolve_top_k()
-            return self._run_evaluation(
-                effective_testset, effective_top_k
-            )
+            return self._run_evaluation(effective_testset, effective_top_k)
 
-    def list_reports(self) -> List[Dict[str, object]]:
+    def list_reports(self) -> list[dict[str, object]]:
         """列出历史评测报告摘要，按时间倒序返回。"""
         with self._lock:
             reports = self._load_all_reports()
@@ -378,7 +358,7 @@ class EvaluationRunner:
             summaries.sort(key=lambda x: x["created_at"], reverse=True)
             return summaries
 
-    def get_report(self, report_id: str) -> Optional[EvaluationReport]:
+    def get_report(self, report_id: str) -> EvaluationReport | None:
         """查询单个报告详情，不存在时返回 None。"""
         with self._lock:
             if report_id in self._report_cache:
@@ -397,14 +377,12 @@ class EvaluationRunner:
 
     # ----- 内部实现 -----
 
-    def _run_evaluation(
-        self, testset: TestSet, top_k: int
-    ) -> EvaluationReport:
+    def _run_evaluation(self, testset: TestSet, top_k: int) -> EvaluationReport:
         """单次评测核心逻辑：检索每条用例并计算指标。"""
         start = time.time()
-        details: List[CaseDetail] = []
+        details: list[CaseDetail] = []
         # 检索结果缓存：相同 query 不重复检索，避免重复计算
-        query_cache: Dict[str, List[RetrievedChunk]] = {}
+        query_cache: dict[str, list[RetrievedChunk]] = {}
 
         for case in testset.cases:
             detail = self._evaluate_case(case, top_k, query_cache)
@@ -442,7 +420,7 @@ class EvaluationRunner:
         self,
         case: TestCase,
         top_k: int,
-        query_cache: Dict[str, List[RetrievedChunk]],
+        query_cache: dict[str, list[RetrievedChunk]],
     ) -> CaseDetail:
         """评测单条用例：检索并计算命中信息。
 
@@ -483,9 +461,7 @@ class EvaluationRunner:
         )
 
     @staticmethod
-    def _is_relevant(
-        chunk: RetrievedChunk, expected_sources: List[str]
-    ) -> bool:
+    def _is_relevant(chunk: RetrievedChunk, expected_sources: list[str]) -> bool:
         """判断 chunk 是否相关：source 命中任一期望来源即视为相关。"""
         if not expected_sources:
             return False
@@ -497,9 +473,7 @@ class EvaluationRunner:
                 return True
         return False
 
-    def _retrieve(
-        self, query: str, top_k: int
-    ) -> List[RetrievedChunk]:
+    def _retrieve(self, query: str, top_k: int) -> list[RetrievedChunk]:
         """调用 HybridRetriever 检索，空库或异常返回空列表。"""
         from app.knowledge.hybrid_retriever import get_hybrid_retriever
 
@@ -507,9 +481,7 @@ class EvaluationRunner:
         return retriever.retrieve(query, top_k=top_k)
 
     @staticmethod
-    def _compute_metrics(
-        details: List[CaseDetail], top_k: int
-    ) -> Dict[str, float]:
+    def _compute_metrics(details: list[CaseDetail], top_k: int) -> dict[str, float]:
         """计算 Recall@K / Precision@K / Hit Rate / MRR / Hallucination Rate。
 
         - Recall@K：期望来源出现在 Top-K 的比例（仅 should_hit=True 用例）
@@ -538,25 +510,15 @@ class EvaluationRunner:
             recall = 0.0
 
         # Precision@K：Top-K 中相关结果平均比例
-        precision_values = [
-            d.relevant_count / top_k
-            for d in details
-            if d.should_hit and top_k > 0
-        ]
-        precision = (
-            sum(precision_values) / len(precision_values)
-            if precision_values
-            else 0.0
-        )
+        precision_values = [d.relevant_count / top_k for d in details if d.should_hit and top_k > 0]
+        precision = sum(precision_values) / len(precision_values) if precision_values else 0.0
 
         # Hit Rate：所有用例中检索到期望来源的比例
         hit_rate = sum(1 for d in details if d.hit) / len(details)
 
         # MRR：应命中用例中第一个相关结果的平均倒数排名
         rr_values = [
-            1.0 / d.first_relevant_rank
-            for d in should_hit_cases
-            if d.first_relevant_rank > 0
+            1.0 / d.first_relevant_rank for d in should_hit_cases if d.first_relevant_rank > 0
         ]
         mrr = sum(rr_values) / len(should_hit_cases) if should_hit_cases else 0.0
 
@@ -618,9 +580,9 @@ class EvaluationRunner:
         except Exception as exc:
             logger.warning("报告持久化失败 report_id=%s：%s", report.report_id, exc)
 
-    def _load_all_reports(self) -> List[EvaluationReport]:
+    def _load_all_reports(self) -> list[EvaluationReport]:
         """加载所有持久化报告。"""
-        reports: List[EvaluationReport] = []
+        reports: list[EvaluationReport] = []
         reports_dir = self._reports_dir()
         if not reports_dir.exists():
             return reports
@@ -633,7 +595,7 @@ class EvaluationRunner:
         return reports
 
     @staticmethod
-    def _to_summary(report: EvaluationReport) -> Dict[str, object]:
+    def _to_summary(report: EvaluationReport) -> dict[str, object]:
         """将报告转为摘要字典，用于列表展示。"""
         return {
             "report_id": report.report_id,
@@ -650,7 +612,7 @@ class EvaluationRunner:
 
 
 # 模块级单例：评测状态进程内共享
-_evaluation_runner: Optional[EvaluationRunner] = None
+_evaluation_runner: EvaluationRunner | None = None
 _runner_lock = threading.Lock()
 
 
@@ -674,9 +636,7 @@ def reset_evaluation_runner() -> None:
         _evaluation_runner = None
 
 
-def run_evaluation(
-    testset_path: Optional[str] = None, top_k: Optional[int] = None
-) -> EvaluationReport:
+def run_evaluation(testset_path: str | None = None, top_k: int | None = None) -> EvaluationReport:
     """高层 API：加载测试集并执行评测。
 
     内置默认测试集，可加载外部测试集覆盖；

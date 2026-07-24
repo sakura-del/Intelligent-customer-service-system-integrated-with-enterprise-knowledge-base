@@ -9,6 +9,7 @@
 不引入新数据库依赖，复用 ChromaDB 持久化目录存放 JSON 文件。
 chunk 文本快照用于回滚时重新入库，避免依赖向量库的软删除能力。
 """
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -72,7 +73,7 @@ class DocumentStore:
         self._store_path = Path(self._persist_dir) / self._filename
         self._lock = RLock()
         # documents: doc_id -> 文档记录字典
-        self._documents: Dict[str, Dict[str, Any]] = {}
+        self._documents: dict[str, dict[str, Any]] = {}
         self._load()
 
     # ------------------------------------------------------------------
@@ -124,7 +125,7 @@ class DocumentStore:
 
         return get_vector_store()._collection
 
-    def _query_chunk_ids_by_version(self, doc_id: str, version: str) -> List[str]:
+    def _query_chunk_ids_by_version(self, doc_id: str, version: str) -> list[str]:
         """通过 doc_id + version 元数据查询向量库中实际存在的 chunk_ids。
 
         入库时 metadata 已回填 doc_id 与 version，可据此精确过滤。
@@ -145,7 +146,7 @@ class DocumentStore:
             )
             return []
 
-    def _delete_chunks_from_vectorstore(self, chunk_ids: List[str]) -> int:
+    def _delete_chunks_from_vectorstore(self, chunk_ids: list[str]) -> int:
         """从向量库删除指定 chunks，返回成功删除的数量。"""
         if not chunk_ids:
             return 0
@@ -157,7 +158,7 @@ class DocumentStore:
             logger.warning("删除 chunks 失败：%s", exc)
             return 0
 
-    def _reingest_chunks(self, texts: List[str], doc_id: str, version: str) -> List[str]:
+    def _reingest_chunks(self, texts: list[str], doc_id: str, version: str) -> list[str]:
         """重新入库 chunk 文本，返回新生成的 chunk_ids。
 
         回滚场景下目标版本 chunks 可能已被删除，需用存储的文本快照重建。
@@ -194,7 +195,7 @@ class DocumentStore:
     # 文档 / 版本管理 API
     # ------------------------------------------------------------------
 
-    def prepare_version(self, doc_hash: str, source: str = "") -> Tuple[str, str]:
+    def prepare_version(self, doc_hash: str, source: str = "") -> tuple[str, str]:
         """预分配文档 ID 与版本号（入库前调用，便于回填 metadata）。
 
         如果 doc_hash 已存在则视为同文档新版本，否则新建文档记录。
@@ -267,7 +268,7 @@ class DocumentStore:
         self,
         doc_id: str,
         version: str,
-        chunk_texts: List[str],
+        chunk_texts: list[str],
     ) -> None:
         """入库后补全版本的 chunk_ids 与文本快照（用于回滚恢复）。
 
@@ -295,7 +296,7 @@ class DocumentStore:
                 len(chunk_ids),
             )
 
-    def _find_doc_id_by_hash(self, doc_hash: str) -> Optional[str]:
+    def _find_doc_id_by_hash(self, doc_hash: str) -> str | None:
         """通过 doc_hash 查找已存在文档（任一版本 hash 匹配即视为同文档）。"""
         if not doc_hash:
             return None
@@ -308,7 +309,7 @@ class DocumentStore:
         return None
 
     @staticmethod
-    def _find_version(doc: Dict[str, Any], version: str) -> Optional[Dict[str, Any]]:
+    def _find_version(doc: dict[str, Any], version: str) -> dict[str, Any] | None:
         """在文档记录中查找指定版本字典。"""
         for ver in doc.get("versions", []):
             if ver.get("version") == version:
@@ -319,10 +320,10 @@ class DocumentStore:
     # 查询接口
     # ------------------------------------------------------------------
 
-    def list_documents(self) -> List[Dict[str, Any]]:
+    def list_documents(self) -> list[dict[str, Any]]:
         """列出全部文档摘要（浅拷贝避免外部修改内部状态）。"""
         with self._lock:
-            summaries: List[Dict[str, Any]] = []
+            summaries: list[dict[str, Any]] = []
             for doc in self._documents.values():
                 summaries.append(
                     {
@@ -336,7 +337,7 @@ class DocumentStore:
                 )
             return summaries
 
-    def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
+    def get_document(self, doc_id: str) -> dict[str, Any] | None:
         """查询单个文档详情（含版本历史，深拷贝避免外部修改）。"""
         with self._lock:
             doc = self._documents.get(doc_id)
@@ -344,13 +345,13 @@ class DocumentStore:
                 return None
             return json.loads(json.dumps(doc, ensure_ascii=False))
 
-    def list_versions(self, doc_id: str) -> List[Dict[str, Any]]:
+    def list_versions(self, doc_id: str) -> list[dict[str, Any]]:
         """列出文档的全部版本（精简字段，不含 chunk_ids/texts）。"""
         with self._lock:
             doc = self._documents.get(doc_id)
             if doc is None:
                 return []
-            versions: List[Dict[str, Any]] = []
+            versions: list[dict[str, Any]] = []
             for ver in doc.get("versions", []):
                 versions.append(
                     {
@@ -369,7 +370,7 @@ class DocumentStore:
             doc = self._documents.get(doc_id)
             return doc.get("current_version", "") if doc else ""
 
-    def get_version_chunk_ids(self, doc_id: str, version: str) -> List[str]:
+    def get_version_chunk_ids(self, doc_id: str, version: str) -> list[str]:
         """返回指定版本的 chunk_ids（用于灰度检索过滤）。"""
         with self._lock:
             doc = self._documents.get(doc_id)
@@ -393,7 +394,7 @@ class DocumentStore:
                 logger.warning("删除文档不存在：%s", doc_id)
                 return 0
             # 收集所有版本的 chunk_ids 去重后删除
-            all_chunk_ids: List[str] = []
+            all_chunk_ids: list[str] = []
             for ver in doc.get("versions", []):
                 all_chunk_ids.extend(ver.get("chunk_ids", []))
             unique_ids = list(set(cid for cid in all_chunk_ids if cid))
@@ -404,9 +405,7 @@ class DocumentStore:
                 ver["status"] = DOC_STATUS_DELETED
             doc["updated_at"] = _now_iso()
             self._save()
-            logger.info(
-                "文档 %s 已删除，移除 chunks=%d", doc_id, deleted_count
-            )
+            logger.info("文档 %s 已删除，移除 chunks=%d", doc_id, deleted_count)
             return deleted_count
 
     def rollback_document(self, doc_id: str, target_version: str) -> bool:
@@ -436,7 +435,7 @@ class DocumentStore:
             # 向量库中无 chunks 但有文本快照时需重建，覆盖两种场景：
             # 1) chunks 被 delete_document 删除
             # 2) chunks 因入库去重未实际写入（chunk_ids 为空但 chunk_texts 非空）
-            missing_texts: List[str] = []
+            missing_texts: list[str] = []
             if not existing_ids and stored_texts:
                 missing_texts = stored_texts
             if missing_texts:
@@ -469,7 +468,7 @@ class DocumentStore:
 
 
 # 模块级单例，避免重复加载 JSON 文件
-_document_store: Optional[DocumentStore] = None
+_document_store: DocumentStore | None = None
 
 
 def get_document_store() -> DocumentStore:

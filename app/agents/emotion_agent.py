@@ -6,11 +6,11 @@
 LLM 不可用时（mock 模式）降级到关键词规则兜底，
 保证离线环境下仍能产出可用的情绪判断。
 """
+
 from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple
 
 from app.agents.llm_client import LLMClient, get_llm_client
 from app.core.logging import get_logger
@@ -22,53 +22,58 @@ logger = get_logger("app.agents.emotion_agent")
 # 每类情绪对应一组触发关键词及分数区间 [base, max]：
 # 命中 1 个关键词取 base，每多命中 1 个 +1，上限为 max。
 # 顺序决定优先级：愤怒 > 焦虑 > 失望 > 满意，越严重的情绪越优先判定。
-EMOTION_KEYWORD_RULES: List[Tuple[EmotionType, List[str], int, int]] = [
+EMOTION_KEYWORD_RULES: list[tuple[EmotionType, list[str], int, int]] = [
     (
         EmotionType.ANGER,
         # 脏话、投诉、威胁差评、垃圾等高激烈负面表达
-        ["垃圾", "投诉", "差评", "骗子", "恶心", "无耻", "神经病",
-         "傻逼", "去死", "气死", "滚", "妈的", "靠"],
+        [
+            "垃圾",
+            "投诉",
+            "差评",
+            "骗子",
+            "恶心",
+            "无耻",
+            "神经病",
+            "傻逼",
+            "去死",
+            "气死",
+            "滚",
+            "妈的",
+            "靠",
+        ],
         4,
         5,
     ),
     (
         EmotionType.ANXIETY,
         # 反复追问、着急、担心等焦虑表达
-        ["着急", "担心", "怎么还", "到底", "什么时候", "还没",
-         "多久", "赶紧", "快点", "急"],
+        ["着急", "担心", "怎么还", "到底", "什么时候", "还没", "多久", "赶紧", "快点", "急"],
         3,
         4,
     ),
     (
         EmotionType.DISAPPOINTMENT,
         # 不满、失望、对比预期等失落表达
-        ["失望", "不满", "跟预期", "不如", "没想到", "太差",
-         "不值", "不应该"],
+        ["失望", "不满", "跟预期", "不如", "没想到", "太差", "不值", "不应该"],
         2,
         3,
     ),
     (
         EmotionType.SATISFACTION,
         # 感谢、表扬、好评等正面表达
-        ["谢谢", "感谢", "好评", "太棒", "不错", "满意",
-         "喜欢", "专业", "棒"],
+        ["谢谢", "感谢", "好评", "太棒", "不错", "满意", "喜欢", "专业", "棒"],
         1,
         2,
     ),
 ]
 
 # 情绪类型 → 应对策略文本，按 spec 定义每类情绪的标准应对方式
-EMOTION_STRATEGIES: Dict[EmotionType, str] = {
-    EmotionType.ANGER:
-        "先安抚用户情绪，表达理解与歉意；优先转人工客服由专人跟进处理",
-    EmotionType.ANXIETY:
-        "详细解释处理流程与原因，给出明确的时间预期，缓解用户焦虑",
-    EmotionType.DISAPPOINTMENT:
-        "诚恳道歉，承认不足，主动提供解决方案或补偿方案",
-    EmotionType.SATISFACTION:
-        "礼貌回应感谢，邀请用户评价并推荐其他服务",
-    EmotionType.NEUTRAL:
-        "按标准流程处理用户咨询，提供准确信息",
+EMOTION_STRATEGIES: dict[EmotionType, str] = {
+    EmotionType.ANGER: "先安抚用户情绪，表达理解与歉意；优先转人工客服由专人跟进处理",
+    EmotionType.ANXIETY: "详细解释处理流程与原因，给出明确的时间预期，缓解用户焦虑",
+    EmotionType.DISAPPOINTMENT: "诚恳道歉，承认不足，主动提供解决方案或补偿方案",
+    EmotionType.SATISFACTION: "礼貌回应感谢，邀请用户评价并推荐其他服务",
+    EmotionType.NEUTRAL: "按标准流程处理用户咨询，提供准确信息",
 }
 
 # 触发转人工的愤怒分数阈值：超过该值表示激烈愤怒，必须转人工
@@ -100,7 +105,7 @@ class EmotionAgent:
     LLM 为 mock 时走关键词规则兜底，保证离线环境可用。
     """
 
-    def __init__(self, llm_client: Optional[LLMClient] = None) -> None:
+    def __init__(self, llm_client: LLMClient | None = None) -> None:
         # 延迟取单例，便于测试注入自定义实现
         self._llm_client = llm_client
 
@@ -113,9 +118,7 @@ class EmotionAgent:
 
     # ==================== 对外核心方法 ====================
 
-    def analyze(
-        self, query: str, session_id: Optional[str] = None
-    ) -> EmotionResult:
+    def analyze(self, query: str, session_id: str | None = None) -> EmotionResult:
         """分析用户消息的情绪并给出应对策略。
 
         空查询直接返回中性兜底；mock 模式走规则；LLM 模式解析 JSON，
@@ -124,9 +127,7 @@ class EmotionAgent:
         # 空查询：返回中性兜底，避免无意义分析
         if not query or not query.strip():
             logger.info("空查询，返回中性兜底：session=%s", session_id or "-")
-            return self._build_result(
-                EmotionType.NEUTRAL, score=1, confidence=0.5, keywords=[]
-            )
+            return self._build_result(EmotionType.NEUTRAL, score=1, confidence=0.5, keywords=[])
 
         if self.llm_client.is_mock:
             result = self._rule_based_analyze(query)
@@ -155,22 +156,22 @@ class EmotionAgent:
 
         if emotion is None:
             # 未命中任何关键词：中性咨询
-            return self._build_result(
-                EmotionType.NEUTRAL, score=1, confidence=0.5, keywords=[]
-            )
+            return self._build_result(EmotionType.NEUTRAL, score=1, confidence=0.5, keywords=[])
 
         match_count = len(matched_keywords)
         score = self._compute_score(emotion, match_count)
         confidence = self._compute_confidence(match_count)
         return self._build_result(
-            emotion, score=score, confidence=confidence,
+            emotion,
+            score=score,
+            confidence=confidence,
             keywords=matched_keywords,
         )
 
     @staticmethod
     def _match_emotion_by_rules(
         query: str,
-    ) -> Tuple[Optional[EmotionType], List[str]]:
+    ) -> tuple[EmotionType | None, list[str]]:
         """按优先级匹配情绪关键词，返回命中的情绪类型与关键词列表。
 
         遍历 EMOTION_KEYWORD_RULES（已按严重程度排序），
@@ -237,13 +238,16 @@ class EmotionAgent:
 
         emotion, score, confidence, keywords = parsed
         return self._build_result(
-            emotion, score=score, confidence=confidence, keywords=keywords,
+            emotion,
+            score=score,
+            confidence=confidence,
+            keywords=keywords,
         )
 
     @staticmethod
     def _parse_llm_response(
         raw: str,
-    ) -> Optional[Tuple[EmotionType, int, float, List[str]]]:
+    ) -> tuple[EmotionType, int, float, list[str]] | None:
         """解析 LLM 返回的 JSON，校验字段并 clamp 到合法区间。
 
         解析失败或 emotion 非法时返回 None，由调用方决定降级策略。
@@ -280,16 +284,14 @@ class EmotionAgent:
         emotion: EmotionType,
         score: int,
         confidence: float,
-        keywords: List[str],
+        keywords: list[str],
     ) -> EmotionResult:
         """组装 EmotionResult，统一推导策略与转人工建议。
 
         策略按情绪类型查表；转人工仅在愤怒且 score 超过阈值时触发，
         其他情绪不主动转（持续负面场景由上游结合会话历史判断）。
         """
-        strategy = EMOTION_STRATEGIES.get(
-            emotion, EMOTION_STRATEGIES[EmotionType.NEUTRAL]
-        )
+        strategy = EMOTION_STRATEGIES.get(emotion, EMOTION_STRATEGIES[EmotionType.NEUTRAL])
         suggest_escalate = self._should_escalate(emotion, score)
         return EmotionResult(
             emotion=emotion,
@@ -311,7 +313,7 @@ class EmotionAgent:
 
 
 # 模块级单例：Agent 无状态，进程内复用
-_emotion_agent: Optional[EmotionAgent] = None
+_emotion_agent: EmotionAgent | None = None
 
 
 def get_emotion_agent() -> EmotionAgent:

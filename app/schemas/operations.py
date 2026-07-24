@@ -7,12 +7,10 @@
 - 所有数值字段提供默认值，聚合失败或空数据场景仍能返回结构完整的响应
 - 模型分层清晰：Experiment / Variant 等小模型组合为聚合报告
 """
+
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
 from pydantic import BaseModel, Field
-
 
 # ----------------------------------------------------------------------
 # 灰度发布与 A/B 测试
@@ -44,11 +42,11 @@ class Experiment(BaseModel):
 
     name: str = Field(..., description="实验名，全局唯一")
     description: str = Field("", description="实验描述")
-    variants: List[Variant] = Field(
+    variants: list[Variant] = Field(
         default_factory=list,
         description="分组列表，至少包含 control 与一个 treatment",
     )
-    target_metrics: List[str] = Field(
+    target_metrics: list[str] = Field(
         default_factory=list,
         description="实验关注的目标指标名列表",
     )
@@ -74,11 +72,11 @@ class ExperimentResults(BaseModel):
 
     name: str = Field(..., description="实验名")
     enabled: bool = Field(True, description="实验是否启用")
-    variants: List[str] = Field(
+    variants: list[str] = Field(
         default_factory=list,
         description="分组名列表",
     )
-    metrics: Dict[str, Dict[str, VariantMetricStats]] = Field(
+    metrics: dict[str, dict[str, VariantMetricStats]] = Field(
         default_factory=dict,
         description="按分组聚合的指标统计",
     )
@@ -89,11 +87,11 @@ class CreateExperimentRequest(BaseModel):
 
     name: str = Field(..., description="实验名，全局唯一")
     description: str = Field("", description="实验描述")
-    variants: List[Variant] = Field(
+    variants: list[Variant] = Field(
         ...,
         description="分组列表，至少含 control 与一个 treatment",
     )
-    target_metrics: List[str] = Field(
+    target_metrics: list[str] = Field(
         default_factory=list,
         description="目标指标名列表",
     )
@@ -128,7 +126,7 @@ class TicketStats(BaseModel):
     new_count: int = Field(0, description="新增工单数（pending）")
     resolved_count: int = Field(0, description="已解决工单数（resolved + closed）")
     unresolved_count: int = Field(0, description="未解决工单数（pending + processing）")
-    category_distribution: Dict[str, int] = Field(
+    category_distribution: dict[str, int] = Field(
         default_factory=dict,
         description="按分类分布，key=分类 value=数量",
     )
@@ -138,7 +136,7 @@ class EscalationStats(BaseModel):
     """转接统计。"""
 
     total_escalations: int = Field(0, description="转接次数")
-    reason_distribution: Dict[str, int] = Field(
+    reason_distribution: dict[str, int] = Field(
         default_factory=dict,
         description="转接原因分布，key=规则名 value=次数",
     )
@@ -160,7 +158,7 @@ class KnowledgeStats(BaseModel):
     """知识库统计。"""
 
     total_entries: int = Field(0, description="知识库总条目数")
-    type_distribution: Dict[str, int] = Field(
+    type_distribution: dict[str, int] = Field(
         default_factory=dict,
         description="按类型分布，key=类型 value=数量",
     )
@@ -224,7 +222,7 @@ class ChecklistReport(BaseModel):
     warned: int = Field(0, description="警告项数")
     skipped: int = Field(0, description="跳过项数")
     total: int = Field(0, description="总检查项数")
-    items: List[CheckItem] = Field(
+    items: list[CheckItem] = Field(
         default_factory=list,
         description="各检查项详情",
     )

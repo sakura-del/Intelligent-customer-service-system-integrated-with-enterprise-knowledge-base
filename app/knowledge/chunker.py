@@ -4,10 +4,10 @@
 不足 chunk_size 时再用滑动窗口按字符数补足，
 每个 chunk 保留页码与章节信息以支持检索回溯。
 """
+
 from __future__ import annotations
 
 import re
-from typing import List
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -33,24 +33,24 @@ class SemanticChunker:
         self.chunk_size = chunk_size or settings.CHUNK_SIZE
         self.chunk_overlap = chunk_overlap or settings.CHUNK_OVERLAP
 
-    def chunk_document(self, document: ParsedDocument) -> List[TextChunk]:
+    def chunk_document(self, document: ParsedDocument) -> list[TextChunk]:
         """对整篇文档执行切分，聚合各页结果。"""
-        chunks: List[TextChunk] = []
+        chunks: list[TextChunk] = []
         for page in document.pages:
             chunks.extend(self._chunk_page(page))
         logger.info("文档 %s 切分完成，共 %d 个 chunk", document.source, len(chunks))
         return chunks
 
-    def _chunk_page(self, page: ParsedPage) -> List[TextChunk]:
+    def _chunk_page(self, page: ParsedPage) -> list[TextChunk]:
         """对单页执行切分，并维护当前章节上下文。"""
         if not page.text.strip():
             return []
 
         # 优先按章节切：根据 sections 的标题位置将页面拆成若干段
         section_blocks = self._split_by_sections(page.text, page.sections)
-        chunks: List[TextChunk] = []
+        chunks: list[TextChunk] = []
         # 章节栈：保留层级路径，便于拼出 "章节1/子章节2"
-        section_stack: List[SectionInfo] = []
+        section_stack: list[SectionInfo] = []
         for section_path, block_text in section_blocks:
             if section_path:
                 # 更新章节栈：丢弃比当前层级更深的历史记录
@@ -59,12 +59,10 @@ class SemanticChunker:
                 section_stack.append(section_path[-1])
 
             current_section_title = " / ".join(s.title for s in section_stack)
-            chunks.extend(
-                self._split_block(block_text, page.page_number, current_section_title)
-            )
+            chunks.extend(self._split_block(block_text, page.page_number, current_section_title))
         return chunks
 
-    def _split_by_sections(self, text: str, sections: List[SectionInfo]) -> List[tuple]:
+    def _split_by_sections(self, text: str, sections: list[SectionInfo]) -> list[tuple]:
         """按标题位置把文本拆成 (章节路径, 文本块) 列表。
 
         若文档未提供 sections 信息，则直接返回整段文本，
@@ -74,7 +72,7 @@ class SemanticChunker:
             return [([], text)]
 
         # 在文本中定位每个标题首次出现位置作为分界点
-        boundaries: List[tuple] = []
+        boundaries: list[tuple] = []
         cursor = 0
         for section in sections:
             # 用行级匹配避免误命中正文中的相同字串
@@ -93,9 +91,9 @@ class SemanticChunker:
             return [([], text)]
 
         # 构造 (section_path, block_text)：标题之前的文本归入前一段
-        result: List[tuple] = []
+        result: list[tuple] = []
         prev_pos = 0
-        prev_section: List[SectionInfo] = []
+        prev_section: list[SectionInfo] = []
         for section, pos in boundaries:
             if pos > prev_pos:
                 block = text[prev_pos:pos].strip()
@@ -109,13 +107,13 @@ class SemanticChunker:
             result.append((prev_section, tail))
         return result
 
-    def _split_block(self, text: str, page_number: int, section: str) -> List[TextChunk]:
+    def _split_block(self, text: str, page_number: int, section: str) -> list[TextChunk]:
         """对一段文本执行段落级 + 字符级切分。"""
         paragraphs = [p.strip() for p in _PARAGRAPH_SPLIT_PATTERN.split(text) if p.strip()]
         if not paragraphs:
             return []
 
-        chunks: List[TextChunk] = []
+        chunks: list[TextChunk] = []
         buffer = ""
         for paragraph in paragraphs:
             # 段落本身超长时，先用字符级滑动窗口单独切分，避免单段越界
@@ -139,9 +137,9 @@ class SemanticChunker:
             chunks.append(self._make_chunk(buffer, page_number, section))
         return chunks
 
-    def _split_by_chars(self, text: str, page_number: int, section: str) -> List[TextChunk]:
+    def _split_by_chars(self, text: str, page_number: int, section: str) -> list[TextChunk]:
         """字符级滑动窗口兜底切分：保证超长段落仍可入库。"""
-        chunks: List[TextChunk] = []
+        chunks: list[TextChunk] = []
         if not text:
             return chunks
         step = max(self.chunk_size - self.chunk_overlap, 1)
@@ -165,6 +163,6 @@ class SemanticChunker:
         return TextChunk(text=text, page_number=page_number, section=section)
 
 
-def chunk_document(document: ParsedDocument) -> List[TextChunk]:
+def chunk_document(document: ParsedDocument) -> list[TextChunk]:
     """便捷入口：使用默认配置切分文档。"""
     return SemanticChunker().chunk_document(document)

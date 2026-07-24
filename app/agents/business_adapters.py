@@ -15,10 +15,11 @@
   让 Agent 走"未找到/失败"分支给出友好提示，避免单次调用拖垮整条业务流程
 - 适配器实例无状态（mock 共享底层 MockBusinessAPI 单例），进程内复用
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -39,7 +40,7 @@ class BusinessSystemAdapter(ABC):
 
     # ----- 订单 -----
     @abstractmethod
-    def query_order(self, order_id: str) -> Optional[Dict[str, Any]]:
+    def query_order(self, order_id: str) -> dict[str, Any] | None:
         """按订单号查询订单详情，不存在返回 None。"""
 
     # ----- 退换货 -----
@@ -48,34 +49,34 @@ class BusinessSystemAdapter(ABC):
         self,
         order_id: str,
         reason: str,
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
         """创建退换货申请，订单不存在或已有进行中申请时返回 None。"""
 
     @abstractmethod
-    def cancel_return(self, return_id: str) -> Optional[Dict[str, Any]]:
+    def cancel_return(self, return_id: str) -> dict[str, Any] | None:
         """取消退换货，不存在或已终态返回 None。"""
 
     @abstractmethod
-    def query_return(self, return_id: str) -> Optional[Dict[str, Any]]:
+    def query_return(self, return_id: str) -> dict[str, Any] | None:
         """按退换单号查询退换货详情，不存在返回 None。"""
 
     @abstractmethod
-    def list_returns_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+    def list_returns_by_user(self, user_id: str) -> list[dict[str, Any]]:
         """列出用户全部退换货记录，无记录返回空列表。"""
 
     # ----- 会员 -----
     @abstractmethod
-    def query_member(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def query_member(self, user_id: str) -> dict[str, Any] | None:
         """按用户标识查询会员信息，不存在返回 None。"""
 
     # ----- 账户 -----
     @abstractmethod
-    def query_account(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def query_account(self, user_id: str) -> dict[str, Any] | None:
         """按用户标识查询账户信息，不存在返回 None。"""
 
     @abstractmethod
-    def list_transactions(self, user_id: str) -> List[Dict[str, Any]]:
+    def list_transactions(self, user_id: str) -> list[dict[str, Any]]:
         """列出用户全部交易记录，无记录返回空列表。"""
 
 
@@ -87,37 +88,37 @@ class MockBusinessAdapter(BusinessSystemAdapter):
     保证测试注入的 mock 实例与 Agent 内部使用的是同一份共享状态。
     """
 
-    def __init__(self, mock_api: Optional[MockBusinessAPI] = None) -> None:
+    def __init__(self, mock_api: MockBusinessAPI | None = None) -> None:
         # 允许注入自定义 mock 实例，便于测试隔离；默认用全局单例
         self._mock_api = mock_api or get_business_api()
 
-    def query_order(self, order_id: str) -> Optional[Dict[str, Any]]:
+    def query_order(self, order_id: str) -> dict[str, Any] | None:
         return self._mock_api.query_order(order_id)
 
     def create_return(
         self,
         order_id: str,
         reason: str,
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
         return self._mock_api.create_return(order_id, reason, user_id)
 
-    def cancel_return(self, return_id: str) -> Optional[Dict[str, Any]]:
+    def cancel_return(self, return_id: str) -> dict[str, Any] | None:
         return self._mock_api.cancel_return(return_id)
 
-    def query_return(self, return_id: str) -> Optional[Dict[str, Any]]:
+    def query_return(self, return_id: str) -> dict[str, Any] | None:
         return self._mock_api.query_return(return_id)
 
-    def list_returns_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+    def list_returns_by_user(self, user_id: str) -> list[dict[str, Any]]:
         return self._mock_api.list_returns_by_user(user_id)
 
-    def query_member(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def query_member(self, user_id: str) -> dict[str, Any] | None:
         return self._mock_api.query_member(user_id)
 
-    def query_account(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def query_account(self, user_id: str) -> dict[str, Any] | None:
         return self._mock_api.query_account(user_id)
 
-    def list_transactions(self, user_id: str) -> List[Dict[str, Any]]:
+    def list_transactions(self, user_id: str) -> list[dict[str, Any]]:
         """从账户数据中抽取交易记录。
 
         mock 没有独立的交易接口，交易记录是账户数据的子字段，
@@ -154,7 +155,7 @@ class HttpBusinessAdapter(BusinessSystemAdapter):
         base_url: str,
         api_key: str = "",
         timeout: float = 10.0,
-        transport: Optional[httpx.BaseTransport] = None,
+        transport: httpx.BaseTransport | None = None,
     ) -> None:
         # 去掉末尾斜杠避免拼接出双斜杠导致路由 404
         self._base_url = (base_url or "").rstrip("/")
@@ -163,7 +164,7 @@ class HttpBusinessAdapter(BusinessSystemAdapter):
         # transport 仅用于测试注入 MockTransport；生产为 None 走默认真实传输
         self._transport = transport
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         """构造请求头。API Key 非空时携带鉴权头。"""
         headers = {
             "Content-Type": "application/json",
@@ -177,9 +178,9 @@ class HttpBusinessAdapter(BusinessSystemAdapter):
         self,
         method: str,
         path: str,
-        json_body: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Dict[str, Any]]:
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         """统一发送 HTTP 请求并解析 JSON 响应。
 
         网络错误/超时/非 2xx 状态码统一返回 None，避免业务流程被异常打断。
@@ -223,7 +224,7 @@ class HttpBusinessAdapter(BusinessSystemAdapter):
             return None
 
     # ----- 订单 -----
-    def query_order(self, order_id: str) -> Optional[Dict[str, Any]]:
+    def query_order(self, order_id: str) -> dict[str, Any] | None:
         return self._request("GET", f"/orders/{order_id}")
 
     # ----- 退换货 -----
@@ -231,20 +232,20 @@ class HttpBusinessAdapter(BusinessSystemAdapter):
         self,
         order_id: str,
         reason: str,
-        user_id: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        body: Dict[str, Any] = {"order_id": order_id, "reason": reason}
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        body: dict[str, Any] = {"order_id": order_id, "reason": reason}
         if user_id:
             body["user_id"] = user_id
         return self._request("POST", "/returns", json_body=body)
 
-    def cancel_return(self, return_id: str) -> Optional[Dict[str, Any]]:
+    def cancel_return(self, return_id: str) -> dict[str, Any] | None:
         return self._request("POST", f"/returns/{return_id}/cancel")
 
-    def query_return(self, return_id: str) -> Optional[Dict[str, Any]]:
+    def query_return(self, return_id: str) -> dict[str, Any] | None:
         return self._request("GET", f"/returns/{return_id}")
 
-    def list_returns_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+    def list_returns_by_user(self, user_id: str) -> list[dict[str, Any]]:
         data = self._request("GET", "/returns", params={"user_id": user_id})
         if not data:
             return []
@@ -254,14 +255,14 @@ class HttpBusinessAdapter(BusinessSystemAdapter):
         return list(data.get("returns") or [])
 
     # ----- 会员 -----
-    def query_member(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def query_member(self, user_id: str) -> dict[str, Any] | None:
         return self._request("GET", f"/members/{user_id}")
 
     # ----- 账户 -----
-    def query_account(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def query_account(self, user_id: str) -> dict[str, Any] | None:
         return self._request("GET", f"/accounts/{user_id}")
 
-    def list_transactions(self, user_id: str) -> List[Dict[str, Any]]:
+    def list_transactions(self, user_id: str) -> list[dict[str, Any]]:
         data = self._request("GET", f"/accounts/{user_id}/transactions")
         if not data:
             return []
@@ -271,7 +272,7 @@ class HttpBusinessAdapter(BusinessSystemAdapter):
 
 
 # 模块级单例：适配器无状态，进程内复用
-_business_adapter: Optional[BusinessSystemAdapter] = None
+_business_adapter: BusinessSystemAdapter | None = None
 
 
 def get_business_adapter() -> BusinessSystemAdapter:

@@ -8,13 +8,12 @@
 - 枚举使用 str + Enum，方便 JSON 序列化与 OpenAPI 文档展示
 - 字段默认值与描述统一在 schema 层声明，core 与 api 层只引用不复述
 """
+
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
-
 
 # ----------------------------------------------------------------------
 # 熔断器数据契约
@@ -48,12 +47,6 @@ class CircuitBreakerStats(BaseModel):
     success_count: int = Field(..., description="当前连续成功次数（HALF_OPEN 窗口内）")
     total_failures: int = Field(..., description="历史累计失败次数")
     total_successes: int = Field(..., description="历史累计成功次数")
-    last_opened_at: Optional[str] = Field(
-        None, description="最近一次进入 OPEN 的时间（ISO8601 UTC）"
-    )
-    last_failure_at: Optional[str] = Field(
-        None, description="最近一次失败时间（ISO8601 UTC）"
-    )
-    last_success_at: Optional[str] = Field(
-        None, description="最近一次成功时间（ISO8601 UTC）"
-    )
+    last_opened_at: str | None = Field(None, description="最近一次进入 OPEN 的时间（ISO8601 UTC）")
+    last_failure_at: str | None = Field(None, description="最近一次失败时间（ISO8601 UTC）")
+    last_success_at: str | None = Field(None, description="最近一次成功时间（ISO8601 UTC）")

@@ -5,11 +5,12 @@
 
 Task 16 扩展：可选注册文档版本到 DocumentStore，可选触发质量校验。
 """
+
 from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.core.logging import get_logger
 from app.knowledge.chunker import SemanticChunker
@@ -26,10 +27,10 @@ logger = get_logger("app.knowledge.pipeline")
 
 def ingest_document(
     file_path: str | Path,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
     register_document: bool = False,
     validate_quality: bool = False,
-    source_name: Optional[str] = None,
+    source_name: str | None = None,
 ) -> IngestResult:
     """端到端入库单文档。
 
@@ -67,7 +68,7 @@ def ingest_document(
             )
 
         # 质量校验在标注前执行：敏感词/术语检查需基于原始文本，避免被标注阶段打码
-        quality_report: Optional[QualityReport] = None
+        quality_report: QualityReport | None = None
         if validate_quality:
             quality_report = run_quality_check(chunks, existing_embeddings=None)
 
@@ -155,9 +156,7 @@ def _prepare_document_version(doc_hash: str, source: str) -> tuple[str, str]:
         return "", ""
 
 
-def _finalize_document_version(
-    doc_id: str, version: str, chunk_texts: list[str]
-) -> None:
+def _finalize_document_version(doc_id: str, version: str, chunk_texts: list[str]) -> None:
     """入库后补全版本元数据，失败时仅告警不阻断主流程。"""
     try:
         from app.knowledge.document_store import get_document_store

@@ -3,6 +3,7 @@
 接收多渠道请求（web/app/wechat/dingtalk/api），
 统一完成鉴权与会话管理，后续可按渠道做分发处理。
 """
+
 from fastapi import APIRouter, Depends
 
 from app.core.security import verify_api_key

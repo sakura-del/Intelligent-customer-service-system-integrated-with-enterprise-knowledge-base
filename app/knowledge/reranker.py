@@ -7,10 +7,10 @@
 为什么需要重排序：双路召回侧重召回率，排序质量有限；
 CrossEncoder 直接建模 (query, doc) 交互，比双塔向量更精准。
 """
+
 from __future__ import annotations
 
 import math
-from typing import List, Optional
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -30,14 +30,14 @@ class Reranker:
     加载失败后标记 _use_fallback，后续不再重试，节省开销。
     """
 
-    def __init__(self, model_name: Optional[str] = None) -> None:
+    def __init__(self, model_name: str | None = None) -> None:
         settings = get_settings()
         self._model_name = model_name or settings.RERANKER_MODEL
         self._model = None
         self._loaded = False
         self._use_fallback = False
         # 缓存 chunk 向量避免重复 embed（fallback 模式专用）
-        self._embedding_cache: dict[str, List[float]] = {}
+        self._embedding_cache: dict[str, list[float]] = {}
 
     @property
     def is_fallback(self) -> bool:
@@ -81,9 +81,9 @@ class Reranker:
     def rerank(
         self,
         query: str,
-        chunks: List[RetrievedChunk],
+        chunks: list[RetrievedChunk],
         top_k: int = 5,
-    ) -> List[RetrievedChunk]:
+    ) -> list[RetrievedChunk]:
         """对 chunks 重排序，返回 top_k 结果。
 
         CrossEncoder 模式：直接预测 (query, chunk) 对分数；
@@ -104,8 +104,8 @@ class Reranker:
         return ranked[:top_k]
 
     def _rerank_with_cross_encoder(
-        self, query: str, chunks: List[RetrievedChunk]
-    ) -> List[RetrievedChunk]:
+        self, query: str, chunks: list[RetrievedChunk]
+    ) -> list[RetrievedChunk]:
         """用 CrossEncoder 预测分数并重排序。
 
         CrossEncoder 输出 logits，通过 sigmoid 归一化到 [0, 1]，
@@ -118,13 +118,11 @@ class Reranker:
             scores = self._model.predict(pairs)
         except Exception as exc:
             # 预测失败时降级到 cosine，保证链路不中断
-            logger.warning(
-                "CrossEncoder 预测失败，降级到 cosine 重排序：%s", exc
-            )
+            logger.warning("CrossEncoder 预测失败，降级到 cosine 重排序：%s", exc)
             return self._rerank_with_cosine(query, chunks)
 
         # sigmoid 归一化：logits -> [0, 1]
-        ranked: List[RetrievedChunk] = []
+        ranked: list[RetrievedChunk] = []
         for chunk, score in zip(chunks, scores):
             normalized = 1.0 / (1.0 + math.exp(-float(score)))
             ranked.append(chunk.model_copy(update={"score": normalized}))
@@ -132,9 +130,7 @@ class Reranker:
         ranked.sort(key=lambda c: c.score, reverse=True)
         return ranked
 
-    def _rerank_with_cosine(
-        self, query: str, chunks: List[RetrievedChunk]
-    ) -> List[RetrievedChunk]:
+    def _rerank_with_cosine(self, query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
         """用 embedding cosine 相似度作为重排序分数。
 
         复用 EmbeddingService：query 向量与每个 chunk 文本向量计算 cosine；
@@ -146,7 +142,7 @@ class Reranker:
             # query 向量化失败：保持原顺序，分数不变
             return list(chunks)
 
-        ranked: List[RetrievedChunk] = []
+        ranked: list[RetrievedChunk] = []
         for chunk in chunks:
             chunk_vec = self._get_cached_embedding(chunk, embedding_service)
             if not chunk_vec:
@@ -160,9 +156,7 @@ class Reranker:
         ranked.sort(key=lambda c: c.score, reverse=True)
         return ranked
 
-    def _get_cached_embedding(
-        self, chunk: RetrievedChunk, embedding_service
-    ) -> List[float]:
+    def _get_cached_embedding(self, chunk: RetrievedChunk, embedding_service) -> list[float]:
         """获取 chunk 向量，带缓存避免重复 embed。
 
         缓存键用 chunk 文本哈希：相同文本不同 RetrievedChunk 实例可复用。
@@ -183,7 +177,7 @@ class Reranker:
         return vec
 
     @staticmethod
-    def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
+    def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
         """计算两个向量的 cosine 相似度。
 
         空向量或零向量返回 0，避免除零异常。
@@ -199,7 +193,7 @@ class Reranker:
 
 
 # 模块级单例：模型加载昂贵，进程内复用
-_reranker: Optional[Reranker] = None
+_reranker: Reranker | None = None
 
 
 def get_reranker() -> Reranker:

@@ -14,12 +14,11 @@
 - ingest_solution 复用现有 VectorStore 单例，与流水线保持一致
 - 用临时文件走 ingest_document 全链路，复用解析/切分/元数据标注逻辑
 """
+
 from __future__ import annotations
 
 import threading
-import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 from app.agents.escalation import generate_solution_id
 from app.core.logging import get_logger
@@ -44,17 +43,17 @@ class KnowledgeFeedback:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         # solution_id -> HumanSolutionRecord，进程内存储便于测试与离线运行
-        self._solutions: Dict[str, HumanSolutionRecord] = {}
+        self._solutions: dict[str, HumanSolutionRecord] = {}
 
     # ------------------------------------------------------------------
     # 录入与标注
     # ------------------------------------------------------------------
     def record_human_solution(
         self,
-        session_id: Optional[str],
+        session_id: str | None,
         question: str,
         solution: str,
-        intent: Optional[str] = None,
+        intent: str | None = None,
     ) -> HumanSolutionRecord:
         """人工录入解决方案，自动标注意图。
 
@@ -103,7 +102,7 @@ class KnowledgeFeedback:
     # ------------------------------------------------------------------
     # 审核与入库
     # ------------------------------------------------------------------
-    def approve_solution(self, solution_id: str) -> Optional[HumanSolutionRecord]:
+    def approve_solution(self, solution_id: str) -> HumanSolutionRecord | None:
         """审核通过并入库为 FAQ 知识。
 
         入库失败时保留 pending 状态便于重试，避免遗漏。
@@ -134,7 +133,7 @@ class KnowledgeFeedback:
             record.status = "approved"
             return record.model_copy()
 
-    def reject_solution(self, solution_id: str) -> Optional[HumanSolutionRecord]:
+    def reject_solution(self, solution_id: str) -> HumanSolutionRecord | None:
         """驳回方案，标记为 rejected 不入库。"""
         with self._lock:
             record = self._solutions.get(solution_id)
@@ -200,11 +199,7 @@ class KnowledgeFeedback:
         ## 解答
         <solution>
         """
-        return (
-            f"# 问题：{question}\n\n"
-            f"意图：{intent}\n\n"
-            f"## 解答\n\n{solution}\n"
-        )
+        return f"# 问题：{question}\n\n意图：{intent}\n\n## 解答\n\n{solution}\n"
 
     @staticmethod
     def _write_temp_faq(content: str) -> str:
@@ -227,7 +222,7 @@ class KnowledgeFeedback:
     # ------------------------------------------------------------------
     # 查询接口
     # ------------------------------------------------------------------
-    def get_pending_solutions(self) -> List[HumanSolutionRecord]:
+    def get_pending_solutions(self) -> list[HumanSolutionRecord]:
         """返回所有待审核方案，便于人工审核列表展示。"""
         with self._lock:
             return [
@@ -236,13 +231,13 @@ class KnowledgeFeedback:
                 if record.status == "pending"
             ]
 
-    def get_solution(self, solution_id: str) -> Optional[HumanSolutionRecord]:
+    def get_solution(self, solution_id: str) -> HumanSolutionRecord | None:
         """查询单条方案记录。"""
         with self._lock:
             record = self._solutions.get(solution_id)
             return record.model_copy() if record is not None else None
 
-    def list_all_solutions(self) -> List[HumanSolutionRecord]:
+    def list_all_solutions(self) -> list[HumanSolutionRecord]:
         """返回所有方案记录，便于审计。"""
         with self._lock:
             return [record.model_copy() for record in self._solutions.values()]
@@ -254,7 +249,7 @@ class KnowledgeFeedback:
 
 
 # 模块级单例：进程内复用，避免多实例导致 pending 队列分裂
-_knowledge_feedback: Optional[KnowledgeFeedback] = None
+_knowledge_feedback: KnowledgeFeedback | None = None
 _singleton_lock = threading.Lock()
 
 

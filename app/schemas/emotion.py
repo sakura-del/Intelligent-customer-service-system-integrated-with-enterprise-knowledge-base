@@ -3,8 +3,8 @@
 定义情绪类型枚举与情感分析结果的结构，
 作为 EmotionAgent 与上游调用方之间的数据契约。
 """
+
 from enum import Enum
-from typing import List
 
 from pydantic import BaseModel, Field
 
@@ -37,13 +37,7 @@ class EmotionResult(BaseModel):
 
     emotion: EmotionType = Field(..., description="识别出的情绪类型")
     score: int = Field(..., ge=1, le=5, description="情绪激烈程度 1-5 分")
-    confidence: float = Field(
-        ..., ge=0.0, le=1.0, description="识别置信度 0-1"
-    )
-    keywords: List[str] = Field(
-        default_factory=list, description="触发情绪识别的关键词列表"
-    )
+    confidence: float = Field(..., ge=0.0, le=1.0, description="识别置信度 0-1")
+    keywords: list[str] = Field(default_factory=list, description="触发情绪识别的关键词列表")
     strategy: str = Field(..., description="针对该情绪的应对策略")
-    suggest_escalate: bool = Field(
-        False, description="是否建议转人工客服"
-    )
+    suggest_escalate: bool = Field(False, description="是否建议转人工客服")

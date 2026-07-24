@@ -11,10 +11,12 @@
 - agent.{agent_name}.request  下游 agent 的请求消息
 - agent.{agent_name}.response 下游 agent 的响应消息
 """
+
 from __future__ import annotations
 
 import threading
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -58,10 +60,10 @@ class InMemoryBus:
 
     def __init__(self) -> None:
         # channel -> handler 列表
-        self._subscribers: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
+        self._subscribers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
         self._lock = threading.RLock()
 
-    def publish(self, channel: str, message: Dict[str, Any]) -> None:
+    def publish(self, channel: str, message: dict[str, Any]) -> None:
         """同步派发消息到所有订阅者。
 
         拷贝一份 handler 列表后再遍历，避免回调中 unsubscribe 导致并发修改异常。
@@ -74,22 +76,16 @@ class InMemoryBus:
                 handler(message)
             except Exception as exc:
                 # 单个订阅者异常不应中断其他订阅者
-                logger.warning(
-                    "InMemoryBus 订阅者回调异常 channel=%s err=%s", channel, exc
-                )
+                logger.warning("InMemoryBus 订阅者回调异常 channel=%s err=%s", channel, exc)
 
-    def subscribe(
-        self, channel: str, handler: Callable[[Dict[str, Any]], None]
-    ) -> None:
+    def subscribe(self, channel: str, handler: Callable[[dict[str, Any]], None]) -> None:
         """注册订阅者到指定 channel。"""
         with self._lock:
             handlers = self._subscribers.setdefault(channel, [])
             if handler not in handlers:
                 handlers.append(handler)
 
-    def unsubscribe(
-        self, channel: str, handler: Callable[[Dict[str, Any]], None]
-    ) -> None:
+    def unsubscribe(self, channel: str, handler: Callable[[dict[str, Any]], None]) -> None:
         """移除指定 channel 上的 handler，不存在则静默忽略。"""
         with self._lock:
             handlers = self._subscribers.get(channel)
@@ -132,16 +128,12 @@ class RedisBus:
         self._redis_lib = redis_lib
 
         # 发布用连接：普通客户端即可
-        self._publish_client = redis_lib.Redis.from_url(
-            redis_url, decode_responses=True
-        )
+        self._publish_client = redis_lib.Redis.from_url(redis_url, decode_responses=True)
         # 订阅用连接：独立 client，避免与 publish 共享导致状态错乱
-        self._subscribe_client = redis_lib.Redis.from_url(
-            redis_url, decode_responses=True
-        )
+        self._subscribe_client = redis_lib.Redis.from_url(redis_url, decode_responses=True)
         self._pubsub = self._subscribe_client.pubsub()
         # channel -> handler 集合，便于 unsubscribe 时管理
-        self._handlers: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
+        self._handlers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         # 后台轮询线程：daemon=True 让进程退出时不阻塞
@@ -150,14 +142,12 @@ class RedisBus:
         )
         self._poll_thread.start()
 
-    def publish(self, channel: str, message: Dict[str, Any]) -> None:
+    def publish(self, channel: str, message: dict[str, Any]) -> None:
         """向 channel 发布 JSON 消息。"""
         payload = self._json.dumps(message, ensure_ascii=False)
         self._publish_client.publish(channel, payload)
 
-    def subscribe(
-        self, channel: str, handler: Callable[[Dict[str, Any]], None]
-    ) -> None:
+    def subscribe(self, channel: str, handler: Callable[[dict[str, Any]], None]) -> None:
         """注册 handler 并向 Redis 订阅 channel。"""
         with self._lock:
             handlers = self._handlers.setdefault(channel, [])
@@ -168,9 +158,7 @@ class RedisBus:
             if len(handlers) == 1:
                 self._pubsub.subscribe(channel)
 
-    def unsubscribe(
-        self, channel: str, handler: Callable[[Dict[str, Any]], None]
-    ) -> None:
+    def unsubscribe(self, channel: str, handler: Callable[[dict[str, Any]], None]) -> None:
         """移除 handler；最后一个 handler 移除时取消 Redis 订阅。"""
         with self._lock:
             handlers = self._handlers.get(channel)
@@ -210,9 +198,7 @@ class RedisBus:
         try:
             payload = self._json.loads(raw_data)
         except (ValueError, TypeError) as exc:
-            logger.warning(
-                "RedisBus 消息反序列化失败 channel=%s err=%s", channel, exc
-            )
+            logger.warning("RedisBus 消息反序列化失败 channel=%s err=%s", channel, exc)
             return
         with self._lock:
             handlers = list(self._handlers.get(channel, []))
@@ -220,9 +206,7 @@ class RedisBus:
             try:
                 handler(payload)
             except Exception as exc:
-                logger.warning(
-                    "RedisBus 订阅者回调异常 channel=%s err=%s", channel, exc
-                )
+                logger.warning("RedisBus 订阅者回调异常 channel=%s err=%s", channel, exc)
 
     @property
     def mode(self) -> str:
@@ -257,7 +241,7 @@ class AgentBus:
     便于测试断言与运维诊断。
     """
 
-    def __init__(self, backend: Optional[Any] = None) -> None:
+    def __init__(self, backend: Any | None = None) -> None:
         # 允许测试时直接注入 backend，跳过自动选择逻辑
         self._backend = backend or self._create_backend()
         logger.info("AgentBus 已初始化，后端类型=%s", self._backend.mode)
@@ -279,9 +263,7 @@ class AgentBus:
             return backend
         except Exception as exc:
             # Redis 服务未启动或网络不可达：降级内存版，保证主流程可用
-            logger.warning(
-                "Redis 不可达（%s），AgentBus 降级到 InMemoryBus", exc
-            )
+            logger.warning("Redis 不可达（%s），AgentBus 降级到 InMemoryBus", exc)
             try:
                 # 创建失败的 RedisBus 已起轮询线程，需 close 释放
                 backend.close()  # type: ignore[union-attr]
@@ -289,19 +271,15 @@ class AgentBus:
                 pass
             return InMemoryBus()
 
-    def publish(self, channel: str, message: Dict[str, Any]) -> None:
+    def publish(self, channel: str, message: dict[str, Any]) -> None:
         """向 channel 发布消息。"""
         self._backend.publish(channel, message)
 
-    def subscribe(
-        self, channel: str, handler: Callable[[Dict[str, Any]], None]
-    ) -> None:
+    def subscribe(self, channel: str, handler: Callable[[dict[str, Any]], None]) -> None:
         """订阅 channel，注册 handler。"""
         self._backend.subscribe(channel, handler)
 
-    def unsubscribe(
-        self, channel: str, handler: Callable[[Dict[str, Any]], None]
-    ) -> None:
+    def unsubscribe(self, channel: str, handler: Callable[[dict[str, Any]], None]) -> None:
         """取消订阅。"""
         self._backend.unsubscribe(channel, handler)
 
@@ -312,7 +290,7 @@ class AgentBus:
 
 
 # 模块级单例：进程内复用一个总线，避免每个 Agent 各起一套 Redis 连接
-_agent_bus: Optional[AgentBus] = None
+_agent_bus: AgentBus | None = None
 _agent_bus_lock = threading.Lock()
 
 

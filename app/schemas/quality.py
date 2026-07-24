@@ -8,9 +8,8 @@
 所有字段均提供默认值，保证任一检查环节降级失败时仍能构造合法报告，
 不影响主入库流程。
 """
-from __future__ import annotations
 
-from typing import List, Optional
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
@@ -39,17 +38,15 @@ class QualityReport(BaseModel):
     """
 
     total_chunks: int = Field(0, description="参与校验的 chunk 总数")
-    duplicate_issues: List[QualityIssue] = Field(
+    duplicate_issues: list[QualityIssue] = Field(
         default_factory=list, description="重复片段问题列表"
     )
-    term_issues: List[QualityIssue] = Field(
-        default_factory=list, description="术语不一致问题列表"
-    )
-    sensitive_issues: List[QualityIssue] = Field(
+    term_issues: list[QualityIssue] = Field(default_factory=list, description="术语不一致问题列表")
+    sensitive_issues: list[QualityIssue] = Field(
         default_factory=list, description="敏感词命中问题列表"
     )
     summary: str = Field("", description="整体概览，便于快速判断质量")
-    error: Optional[str] = Field(None, description="校验过程中的错误信息，成功时为空")
+    error: str | None = Field(None, description="校验过程中的错误信息，成功时为空")
 
 
 class QualityCheckRequest(BaseModel):
@@ -58,5 +55,5 @@ class QualityCheckRequest(BaseModel):
     source 与 doc_id 均为可选过滤条件，都为空时巡检全量内容。
     """
 
-    source: Optional[str] = Field(None, description="按来源文件名过滤")
-    doc_id: Optional[str] = Field(None, description="按文档 ID 过滤")
+    source: str | None = Field(None, description="按来源文件名过滤")
+    doc_id: str | None = Field(None, description="按文档 ID 过滤")

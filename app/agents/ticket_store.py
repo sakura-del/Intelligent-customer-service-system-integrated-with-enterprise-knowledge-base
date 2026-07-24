@@ -7,12 +7,12 @@
 线程安全：所有读写经同一把 RLock 串行化，
 保证多线程并发创建/更新工单时 ID 唯一与状态一致。
 """
+
 from __future__ import annotations
 
 import threading
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 from app.core.logging import get_logger
 from app.schemas.ticket import (
@@ -37,7 +37,7 @@ class TicketStore:
     """
 
     def __init__(self) -> None:
-        self._tickets: Dict[str, Ticket] = {}
+        self._tickets: dict[str, Ticket] = {}
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
@@ -45,14 +45,14 @@ class TicketStore:
     # ------------------------------------------------------------------
     def create_ticket(
         self,
-        user_id: Optional[str],
+        user_id: str | None,
         title: str,
         description: str,
         category: TicketCategory,
         priority: TicketPriority,
-        related_order: Optional[str] = None,
-        related_product: Optional[str] = None,
-        contact: Optional[str] = None,
+        related_order: str | None = None,
+        related_product: str | None = None,
+        contact: str | None = None,
     ) -> Ticket:
         """创建并持久化工单，返回新建的 Ticket。
 
@@ -89,7 +89,7 @@ class TicketStore:
         # 返回副本避免外部突变内部状态，与 SessionManager 风格一致
         return ticket.model_copy()
 
-    def get_ticket(self, ticket_id: str) -> Optional[Ticket]:
+    def get_ticket(self, ticket_id: str) -> Ticket | None:
         """根据 ticket_id 获取工单，不存在返回 None。
 
         返回副本避免外部直接修改内部状态。
@@ -98,7 +98,7 @@ class TicketStore:
             ticket = self._tickets.get(ticket_id)
             return ticket.model_copy() if ticket is not None else None
 
-    def list_tickets(self, user_id: Optional[str] = None) -> List[Ticket]:
+    def list_tickets(self, user_id: str | None = None) -> list[Ticket]:
         """列出工单，可按 user_id 过滤。
 
         未传 user_id 时返回全部工单（供运维监控）；
@@ -113,16 +113,14 @@ class TicketStore:
         tickets.sort(key=lambda t: t.created_at, reverse=True)
         return tickets
 
-    def list_tickets_by_status(self, status: TicketStatus) -> List[Ticket]:
+    def list_tickets_by_status(self, status: TicketStatus) -> list[Ticket]:
         """按状态过滤工单，便于值班人员分派处理。
 
         返回副本避免外部直接修改内部状态。
         """
         with self._lock:
             tickets = [
-                ticket.model_copy()
-                for ticket in self._tickets.values()
-                if ticket.status == status
+                ticket.model_copy() for ticket in self._tickets.values() if ticket.status == status
             ]
         tickets.sort(key=lambda t: t.created_at, reverse=True)
         return tickets
@@ -130,9 +128,7 @@ class TicketStore:
     # ------------------------------------------------------------------
     # 状态流转
     # ------------------------------------------------------------------
-    def update_status(
-        self, ticket_id: str, status: TicketStatus
-    ) -> Optional[Ticket]:
+    def update_status(self, ticket_id: str, status: TicketStatus) -> Ticket | None:
         """更新工单状态并刷新 updated_at。
 
         closed 为终态，已关闭工单拒绝状态回退，避免审计混乱。
@@ -194,7 +190,7 @@ class TicketStore:
 
 
 # 模块级单例：工单存储进程内复用，避免多处实例导致数据不一致
-_ticket_store: Optional[TicketStore] = None
+_ticket_store: TicketStore | None = None
 # 单例创建锁：保证多线程首次获取单例时只创建一次
 _singleton_lock = threading.Lock()
 

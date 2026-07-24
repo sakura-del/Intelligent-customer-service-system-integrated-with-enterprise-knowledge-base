@@ -9,7 +9,6 @@
 - 入参用 MiningRequest（JSON body），便于扩展
 - 挖掘同步执行，简单可靠；大库场景可后续改为异步任务
 """
-from typing import Optional
 
 from fastapi import APIRouter, Depends
 
@@ -28,7 +27,7 @@ router = APIRouter(
 
 
 @router.post("/tickets", response_model=MiningReport)
-def mine_tickets(request: Optional[MiningRequest] = None) -> MiningReport:
+def mine_tickets(request: MiningRequest | None = None) -> MiningReport:
     """触发一次历史工单知识挖掘。
 
     参数通过 MiningRequest JSON body 传入，全部可选：

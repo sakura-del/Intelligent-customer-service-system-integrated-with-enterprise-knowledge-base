@@ -14,12 +14,13 @@
 
 不引入新依赖，调度器内部仅用 threading 实现，不使用 APScheduler。
 """
+
 from __future__ import annotations
 
 import time
 from pathlib import Path
 from threading import RLock
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -30,7 +31,7 @@ from app.schemas.update import UpdateMode
 logger = get_logger("app.knowledge.update_mechanism")
 
 # 默认支持的文件扩展名：与 parsers 注册表对齐，集中配置便于扩展
-DEFAULT_EXTENSIONS: Tuple[str, ...] = (
+DEFAULT_EXTENSIONS: tuple[str, ...] = (
     ".pdf",
     ".docx",
     ".html",
@@ -56,7 +57,7 @@ class UpdateResult(BaseModel):
     deleted: int = Field(0, description="全量更新中清理的失效记录数")
     failed: int = Field(0, description="处理失败的文件数")
     duration_seconds: float = Field(0.0, description="本次更新总耗时（秒）")
-    errors: List[str] = Field(
+    errors: list[str] = Field(
         default_factory=list,
         description="失败文件与错误信息列表，便于排查",
     )
@@ -75,16 +76,16 @@ class UpdateScheduler:
         # RLock 允许同线程重入，便于嵌套调用 run_* 方法时不死锁
         self._lock = RLock()
         # 最近一次更新结果，供 /status 端点查询
-        self._last_result: Optional[UpdateResult] = None
+        self._last_result: UpdateResult | None = None
         # 扫描缓存：key=(dir_path, extensions_tuple) -> List[Path]
         # 避免同一次批量更新内多次扫描同目录的 IO 开销
-        self._scan_cache: Dict[Tuple[str, Tuple[str, ...]], List[Path]] = {}
+        self._scan_cache: dict[tuple[str, tuple[str, ...]], list[Path]] = {}
 
     # ------------------------------------------------------------------
     # 状态查询
     # ------------------------------------------------------------------
 
-    def get_last_result(self) -> Optional[UpdateResult]:
+    def get_last_result(self) -> UpdateResult | None:
         """返回最近一次更新结果（线程安全拷贝）。"""
         with self._lock:
             return self._last_result.model_copy(deep=True) if self._last_result else None
@@ -101,8 +102,8 @@ class UpdateScheduler:
     def scan_directory(
         self,
         dir_path: str | Path,
-        extensions: Optional[List[str]] = None,
-    ) -> List[Path]:
+        extensions: list[str] | None = None,
+    ) -> list[Path]:
         """递归扫描目录下指定扩展名的文件。
 
         目录不存在时返回空列表（降级策略：不抛错）。
@@ -127,7 +128,7 @@ class UpdateScheduler:
                 return list(cached)
 
         # 实际扫描在锁外执行，避免长时间持锁阻塞其他查询
-        matched: List[Path] = []
+        matched: list[Path] = []
         for file_path in path.rglob("*"):
             if not file_path.is_file():
                 continue
@@ -143,7 +144,7 @@ class UpdateScheduler:
         return matched
 
     @staticmethod
-    def _normalize_extensions(extensions: Optional[List[str]]) -> Tuple[str, ...]:
+    def _normalize_extensions(extensions: list[str] | None) -> tuple[str, ...]:
         """将扩展名列表规范为小写元组，空时使用默认支持格式。"""
         if not extensions:
             return DEFAULT_EXTENSIONS
@@ -163,7 +164,7 @@ class UpdateScheduler:
     def run_full_update(
         self,
         dir_path: str | Path,
-        extensions: Optional[List[str]] = None,
+        extensions: list[str] | None = None,
     ) -> UpdateResult:
         """全量更新：扫描目录，入库新增/变更，并删除注册表中已不存在的记录。
 
@@ -219,7 +220,7 @@ class UpdateScheduler:
     def run_incremental_update(
         self,
         dir_path: str | Path,
-        extensions: Optional[List[str]] = None,
+        extensions: list[str] | None = None,
     ) -> UpdateResult:
         """增量更新：仅处理新增或 doc_hash 变化的文件，不删除已不存在的记录。
 
@@ -263,7 +264,7 @@ class UpdateScheduler:
     def update_single_file(
         self,
         file_path: str | Path,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> UpdateResult:
         """单文件更新：直接调用 pipeline 入库并注册版本。
 
@@ -318,7 +319,7 @@ class UpdateScheduler:
     def _process_file_for_update(
         self,
         file_path: Path,
-        store_snapshot: Dict[str, Tuple[str, str]],
+        store_snapshot: dict[str, tuple[str, str]],
         result: UpdateResult,
     ) -> None:
         """处理单个文件：解析比对 doc_hash，决定跳过/新增/更新。
@@ -370,13 +371,13 @@ class UpdateScheduler:
             # pipeline 返回错误时抛出，由调用方记入 errors
             raise RuntimeError(ingest_result.error)
 
-    def _build_store_snapshot(self) -> Dict[str, Tuple[str, str]]:
+    def _build_store_snapshot(self) -> dict[str, tuple[str, str]]:
         """构建注册表快照：source -> (doc_id, doc_hash)。
 
         document_store 不可用时返回空字典，降级为全部视为新增。
         只采集 status != deleted 的文档，避免清理已删除记录时误判。
         """
-        snapshot: Dict[str, Tuple[str, str]] = {}
+        snapshot: dict[str, tuple[str, str]] = {}
         try:
             from app.knowledge.document_store import get_document_store
 
@@ -400,7 +401,7 @@ class UpdateScheduler:
 
     @staticmethod
     def _purge_missing_documents(
-        store_snapshot: Dict[str, Tuple[str, str]],
+        store_snapshot: dict[str, tuple[str, str]],
         scanned_sources: set,
     ) -> int:
         """清理注册表中 source 不在扫描结果里的文档记录。
@@ -409,7 +410,7 @@ class UpdateScheduler:
         """
         deleted_count = 0
         # 收集待删除 doc_id，避免在遍历快照时同时调用删除导致状态不一致
-        to_delete: List[str] = []
+        to_delete: list[str] = []
         for source, (doc_id, _) in store_snapshot.items():
             if source not in scanned_sources:
                 to_delete.append(doc_id)
@@ -447,7 +448,7 @@ class UpdateScheduler:
 # 模块级单例
 # ----------------------------------------------------------------------
 
-_update_scheduler: Optional[UpdateScheduler] = None
+_update_scheduler: UpdateScheduler | None = None
 _singleton_lock = RLock()
 
 

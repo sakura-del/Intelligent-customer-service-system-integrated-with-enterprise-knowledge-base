@@ -10,9 +10,8 @@
 设计目标：把核心模块的内部 dict 统一收敛为 Pydantic 模型，
 便于 API 层直接 response_model 校验输出，同时作为前后端数据契约。
 """
-from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
@@ -40,20 +39,14 @@ class ConcurrencyStats(BaseModel):
     peak 记录历史峰值，rejected 为超限被拒绝（降级同步执行）的累计次数。
     """
 
-    max_concurrent_retrieval: int = Field(
-        0, description="检索最大并发上限"
-    )
+    max_concurrent_retrieval: int = Field(0, description="检索最大并发上限")
     max_concurrent_llm: int = Field(0, description="LLM 调用最大并发上限")
     active_retrieval: int = Field(0, description="当前在途检索并发数")
     active_llm: int = Field(0, description="当前在途 LLM 调用并发数")
     peak_retrieval: int = Field(0, description="检索并发历史峰值")
     peak_llm: int = Field(0, description="LLM 调用并发历史峰值")
-    rejected_retrieval: int = Field(
-        0, description="检索超限降级为同步执行的累计次数"
-    )
-    rejected_llm: int = Field(
-        0, description="LLM 调用超限降级为同步执行的累计次数"
-    )
+    rejected_retrieval: int = Field(0, description="检索超限降级为同步执行的累计次数")
+    rejected_llm: int = Field(0, description="LLM 调用超限降级为同步执行的累计次数")
 
 
 class ModelRouteStat(BaseModel):
@@ -61,9 +54,7 @@ class ModelRouteStat(BaseModel):
 
     model: str = Field(..., description="模型名称")
     calls: int = Field(0, description="路由到该模型的累计次数")
-    avg_complexity: float = Field(
-        0.0, description="路由到该模型的平均复杂度评分，0-1"
-    )
+    avg_complexity: float = Field(0.0, description="路由到该模型的平均复杂度评分，0-1")
 
 
 class ModelRoutingStats(BaseModel):
@@ -74,10 +65,8 @@ class ModelRoutingStats(BaseModel):
     small_model_calls: int = Field(0, description="路由到小模型的累计次数")
     large_model_calls: int = Field(0, description="路由到大模型的累计次数")
     total_calls: int = Field(0, description="路由决策总次数")
-    small_model_ratio: float = Field(
-        0.0, description="小模型占比，0-1，越高越省成本"
-    )
-    per_model: List[ModelRouteStat] = Field(
+    small_model_ratio: float = Field(0.0, description="小模型占比，0-1，越高越省成本")
+    per_model: list[ModelRouteStat] = Field(
         default_factory=list,
         description="按模型名聚合的统计列表，便于细粒度分析",
     )
@@ -90,27 +79,17 @@ class PerformanceMetrics(BaseModel):
     作为 GET /api/v1/performance/metrics 的统一返回结构。
     """
 
-    cache: CacheStats = Field(
-        default_factory=CacheStats, description="热点缓存统计"
-    )
+    cache: CacheStats = Field(default_factory=CacheStats, description="热点缓存统计")
     concurrency: ConcurrencyStats = Field(
         default_factory=ConcurrencyStats, description="并发限流统计"
     )
     model_routing: ModelRoutingStats = Field(
         default_factory=ModelRoutingStats, description="模型路由统计"
     )
-    avg_response_ms: float = Field(
-        0.0, description="最近请求平均响应时间，单位毫秒"
-    )
-    total_response_samples: int = Field(
-        0, description="响应时间采样总数"
-    )
-    stream_first_token_ms_avg: float = Field(
-        0.0, description="流式对话首 Token 平均耗时，单位毫秒"
-    )
-    stream_first_token_ms_p95: float = Field(
-        0.0, description="流式对话首 Token P95 耗时，单位毫秒"
-    )
+    avg_response_ms: float = Field(0.0, description="最近请求平均响应时间，单位毫秒")
+    total_response_samples: int = Field(0, description="响应时间采样总数")
+    stream_first_token_ms_avg: float = Field(0.0, description="流式对话首 Token 平均耗时，单位毫秒")
+    stream_first_token_ms_p95: float = Field(0.0, description="流式对话首 Token P95 耗时，单位毫秒")
 
 
 class InvalidateResult(BaseModel):
@@ -142,14 +121,8 @@ class CacheEntry(BaseModel):
     """
 
     answer: str = Field(..., description="缓存回复文本")
-    sources: List[str] = Field(
-        default_factory=list, description="来源列表"
-    )
-    expires_at: float = Field(
-        0.0, description="过期时间戳（time.monotonic 基准）"
-    )
-    created_at: float = Field(
-        0.0, description="写入时间戳，便于诊断 TTL 与命中新鲜度"
-    )
+    sources: list[str] = Field(default_factory=list, description="来源列表")
+    expires_at: float = Field(0.0, description="过期时间戳（time.monotonic 基准）")
+    created_at: float = Field(0.0, description="写入时间戳，便于诊断 TTL 与命中新鲜度")
 
     model_config = {"arbitrary_types_allowed": True}
