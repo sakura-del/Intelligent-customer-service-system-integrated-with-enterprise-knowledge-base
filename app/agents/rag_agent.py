@@ -5,9 +5,11 @@
 - answer：同步返回完整 RAGAnswer
 - answer_stream：流式 yield meta/token/done 事件，供 SSE 端点透传
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, Generator, List, Optional
+from collections.abc import Generator
+from typing import Any
 
 from app.agents.llm_client import LLMClient, get_llm_client
 from app.core.logging import get_logger
@@ -41,8 +43,8 @@ class RAGAgent:
 
     def __init__(
         self,
-        retriever: Optional[KnowledgeRetriever] = None,
-        llm_client: Optional[LLMClient] = None,
+        retriever: KnowledgeRetriever | None = None,
+        llm_client: LLMClient | None = None,
         top_k: int = 5,
     ) -> None:
         # 延迟取单例，便于在测试中注入自定义实现
@@ -65,8 +67,8 @@ class RAGAgent:
     def answer(
         self,
         question: str,
-        session_id: Optional[str] = None,
-        top_k: Optional[int] = None,
+        session_id: str | None = None,
+        top_k: int | None = None,
     ) -> RAGAnswer:
         """对用户问题产出 RAG 回答。
 
@@ -135,9 +137,9 @@ class RAGAgent:
     def answer_stream(
         self,
         query: str,
-        context_chunks: List[RetrievedChunk],
-        session_id: Optional[str] = None,
-    ) -> Generator[Dict[str, Any], None, None]:
+        context_chunks: list[RetrievedChunk],
+        session_id: str | None = None,
+    ) -> Generator[dict[str, Any], None, None]:
         """流式 RAG 问答：基于已检索的 context_chunks 流式生成答案。
 
         协议：
@@ -163,7 +165,7 @@ class RAGAgent:
 
         # 3. 流式生成：透传 LLM token，同时累积完整文本用于 done 事件
         # name/metadata 标记 prompt name=rag_qa，便于 Langfuse 聚合分析
-        full_text_parts: List[str] = []
+        full_text_parts: list[str] = []
         for event in self.llm_client.stream_chat(
             messages=prompt_messages,
             temperature=0.3,
@@ -192,13 +194,13 @@ class RAGAgent:
         yield {"type": "done", "answer": full_text, "sources": sources}
 
     @staticmethod
-    def _format_sources(chunks: List[RetrievedChunk]) -> List[str]:
+    def _format_sources(chunks: list[RetrievedChunk]) -> list[str]:
         """构造来源展示列表，格式「文件名 第N页」。
 
         去重避免同一文件多页重复展示，最多保留 MAX_SOURCE_COUNT 条。
         """
         seen = set()
-        sources: List[str] = []
+        sources: list[str] = []
         for chunk in chunks:
             source_key = f"{chunk.source}|{chunk.page_number}"
             if source_key in seen:
@@ -210,14 +212,12 @@ class RAGAgent:
         return sources
 
     @staticmethod
-    def _build_prompt_messages(
-        question: str, chunks: List[RetrievedChunk]
-    ) -> List[dict]:
+    def _build_prompt_messages(question: str, chunks: list[RetrievedChunk]) -> list[dict]:
         """构造 LLM 消息列表：system 约束 + 检索片段 + 用户问题。
 
         片段文本截断到 MAX_CHUNK_CHARS 控制总 token，避免超长上下文。
         """
-        context_lines: List[str] = []
+        context_lines: list[str] = []
         for index, chunk in enumerate(chunks, start=1):
             # 截断过长片段，保留开头最相关内容
             truncated = chunk.text[:MAX_CHUNK_CHARS]
@@ -238,7 +238,7 @@ class RAGAgent:
         ]
 
     @staticmethod
-    def _estimate_confidence(chunks: List[RetrievedChunk]) -> float:
+    def _estimate_confidence(chunks: list[RetrievedChunk]) -> float:
         """根据检索结果粗略估计置信度。
 
         以 Top-1 相似度为主，命中数越多置信度越高，
@@ -254,7 +254,7 @@ class RAGAgent:
 
 
 # 模块级单例：Agent 编排无状态，进程内复用
-_rag_agent: Optional[RAGAgent] = None
+_rag_agent: RAGAgent | None = None
 
 
 def get_rag_agent() -> RAGAgent:

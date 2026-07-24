@@ -9,7 +9,8 @@
   dialog.py 的 DialogContext 聚焦"DialogAgent 润色入参"，两者职责不同。
 - 所有字段均带默认值，保证向后兼容，避免破坏既有调用方。
 """
-from typing import Any, Dict, List
+
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -26,11 +27,11 @@ class DialogContext(BaseModel):
     分层边界由 ContextManager 控制（默认近 5 轮 / 中期 10 轮 / 早期其余）。
     """
 
-    recent_turns: List[Dict[str, Any]] = Field(
+    recent_turns: list[dict[str, Any]] = Field(
         default_factory=list,
         description="近期对话原文，每条含 user/assistant 字段",
     )
-    mid_summary: List[str] = Field(
+    mid_summary: list[str] = Field(
         default_factory=list,
         description="中期对话单句摘要列表，按时间顺序排列",
     )

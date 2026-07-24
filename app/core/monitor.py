@@ -12,13 +12,14 @@
 - 内存优化：trace 保留最近 N 条（默认 100，可配置），超限按 FIFO 丢弃
 - 持久化接口：预留 save_trace 钩子，后续接入 ES/DB 时只需覆写
 """
+
 from __future__ import annotations
 
 import threading
 import uuid
 from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -50,7 +51,7 @@ def _truncate(text: Any, max_length: int = SUMMARY_MAX_LENGTH) -> str:
     return s[:max_length] + "..."
 
 
-def _new_trace(trace_id: str, session_id: str, message: str) -> Dict[str, Any]:
+def _new_trace(trace_id: str, session_id: str, message: str) -> dict[str, Any]:
     """构造一条新 trace 的初始结构。
 
     集中在此处定义字段，便于后续接入持久化时复用序列化结构。
@@ -92,10 +93,10 @@ class Monitor:
 
     def __init__(self, max_traces: int = DEFAULT_MAX_TRACES) -> None:
         # deque 配 maxlen 后超限自动丢弃最旧，无需手动维护
-        self._traces: Deque[Dict[str, Any]] = deque(maxlen=max_traces)
+        self._traces: deque[dict[str, Any]] = deque(maxlen=max_traces)
         # trace_id -> trace 的索引，便于 O(1) 查询详情
         # 注意：与 deque 数据保持同步，丢弃时同步移除索引
-        self._trace_index: Dict[str, Dict[str, Any]] = {}
+        self._trace_index: dict[str, dict[str, Any]] = {}
         self._max_traces = max_traces
         self._lock = threading.RLock()
 
@@ -192,7 +193,7 @@ class Monitor:
         turn_count: int = 0,
         failed_attempts: int = 0,
         status: str = "success",
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         """完成一条 trace，写入最终字段。
 
@@ -207,9 +208,7 @@ class Monitor:
             try:
                 start = datetime.fromisoformat(trace["start_time"])
                 end = datetime.fromisoformat(trace["end_time"])
-                trace["duration_ms"] = round(
-                    (end - start).total_seconds() * 1000.0, 2
-                )
+                trace["duration_ms"] = round((end - start).total_seconds() * 1000.0, 2)
             except (ValueError, TypeError):
                 # 时间解析失败时降级为 0，避免影响 trace 落库
                 trace["duration_ms"] = 0.0
@@ -233,16 +232,14 @@ class Monitor:
             try:
                 start = datetime.fromisoformat(trace["start_time"])
                 end = datetime.fromisoformat(trace["end_time"])
-                trace["duration_ms"] = round(
-                    (end - start).total_seconds() * 1000.0, 2
-                )
+                trace["duration_ms"] = round((end - start).total_seconds() * 1000.0, 2)
             except (ValueError, TypeError):
                 trace["duration_ms"] = 0.0
             trace["status"] = "failed"
             trace["error"] = _truncate(error, 500)
             self._persist_trace_locked(trace)
 
-    def _persist_trace_locked(self, trace: Dict[str, Any]) -> None:
+    def _persist_trace_locked(self, trace: dict[str, Any]) -> None:
         """持久化钩子，默认空实现。
 
         预留接口：后续接入 ES/DB 时覆写此方法即可，无需改动上层调用。
@@ -254,7 +251,7 @@ class Monitor:
     # ------------------------------------------------------------------
     # 查询接口
     # ------------------------------------------------------------------
-    def get_traces(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_traces(self, limit: int = 50) -> list[dict[str, Any]]:
         """返回最近 trace 列表（摘要，不含 steps 详情）。
 
         按时间倒序返回（最新在前），limit 控制最多返回条数。
@@ -265,7 +262,7 @@ class Monitor:
             ordered = list(reversed(self._traces))
             return [self._trace_summary(t) for t in ordered[:limit]]
 
-    def get_trace(self, trace_id: str) -> Optional[Dict[str, Any]]:
+    def get_trace(self, trace_id: str) -> dict[str, Any] | None:
         """返回单条 trace 详情（含 steps 与 sub_tasks）。
 
         不存在则返回 None。
@@ -294,7 +291,7 @@ class Monitor:
                 "failed_attempts": trace["failed_attempts"],
             }
 
-    def get_agent_stats(self) -> List[Dict[str, Any]]:
+    def get_agent_stats(self) -> list[dict[str, Any]]:
         """返回各 Agent 当前状态。
 
         从 OrchestratorAgent 注册表获取所有已注册 agent 名（保证未调用的 agent 也展示），
@@ -311,7 +308,7 @@ class Monitor:
             registered_names = []
 
         # 初始化所有已注册 agent 的统计骨架，未调用过的 agent 也展示 0
-        stats: Dict[str, Dict[str, Any]] = {
+        stats: dict[str, dict[str, Any]] = {
             name: {
                 "name": name,
                 "total_calls": 0,
@@ -337,12 +334,10 @@ class Monitor:
                     stats[name]["total_calls"] += 1
                     if agent_call.get("success"):
                         stats[name]["success_count"] += 1
-                    stats[name]["total_duration_ms"] += agent_call.get(
-                        "duration_ms", 0.0
-                    )
+                    stats[name]["total_duration_ms"] += agent_call.get("duration_ms", 0.0)
 
         # 计算平均耗时与成功率
-        result: List[Dict[str, Any]] = []
+        result: list[dict[str, Any]] = []
         for stat in stats.values():
             calls = stat["total_calls"]
             avg_duration = stat["total_duration_ms"] / calls if calls > 0 else 0.0
@@ -359,7 +354,7 @@ class Monitor:
             )
         return result
 
-    def get_sessions(self) -> List[Dict[str, Any]]:
+    def get_sessions(self) -> list[dict[str, Any]]:
         """返回活跃会话列表。
 
         委托给 SessionManager.list_sessions，避免在 Monitor 中重复维护会话状态。
@@ -372,16 +367,14 @@ class Monitor:
             logger.warning("获取活跃会话列表失败：%s", exc)
             return []
 
-    def get_overview(self) -> Dict[str, Any]:
+    def get_overview(self) -> dict[str, Any]:
         """返回系统概览统计：总 trace 数、成功率、平均耗时、活跃会话数。"""
         with self._lock:
             total = len(self._traces)
             success = sum(1 for t in self._traces if t.get("status") == "success")
             failed = sum(1 for t in self._traces if t.get("status") == "failed")
             durations = [t.get("duration_ms", 0.0) for t in self._traces]
-            avg_duration = (
-                sum(durations) / len(durations) if durations else 0.0
-            )
+            avg_duration = sum(durations) / len(durations) if durations else 0.0
             success_rate = success / total if total > 0 else 0.0
         sessions_count = len(self.get_sessions())
         return {
@@ -393,13 +386,13 @@ class Monitor:
             "active_sessions": sessions_count,
         }
 
-    def get_stream_first_token_durations(self) -> List[float]:
+    def get_stream_first_token_durations(self) -> list[float]:
         """返回所有 trace 中 stream_first_token 步骤的耗时列表（毫秒）。
 
         每条 trace 最多取一次首 Token 耗时（break），
         供 performance.py 聚合 avg/p95，避免多次记录导致统计偏置。
         """
-        durations: List[float] = []
+        durations: list[float] = []
         with self._lock:
             for trace in self._traces:
                 # 每条 trace 只取首个 stream_first_token 步骤
@@ -424,7 +417,7 @@ class Monitor:
         return self._max_traces
 
     @staticmethod
-    def _trace_summary(trace: Dict[str, Any]) -> Dict[str, Any]:
+    def _trace_summary(trace: dict[str, Any]) -> dict[str, Any]:
         """构造 trace 摘要（不含 steps 详情），用于列表展示。
 
         列表场景只需关键字段，详情通过 get_trace 单独查询，减少传输量。
@@ -445,7 +438,7 @@ class Monitor:
 
 
 # 模块级单例：进程内复用一个 Monitor，避免每个请求各起一套采集器
-_monitor: Optional[Monitor] = None
+_monitor: Monitor | None = None
 _monitor_lock = threading.Lock()
 
 

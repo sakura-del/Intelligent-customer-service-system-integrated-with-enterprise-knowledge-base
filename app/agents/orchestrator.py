@@ -9,11 +9,13 @@
 - 情绪优先：检测到情绪敏感意图或用户情绪激动时优先走情绪处理
 - 连续 2 轮未解决：自动标记转人工
 """
+
 from __future__ import annotations
 
 import json
 import re
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from app.agents.knowledge_agent import KnowledgeAgent, get_knowledge_agent
 from app.agents.llm_client import LLMClient, get_llm_client
@@ -78,9 +80,9 @@ class OrchestratorAgent:
 
     def __init__(
         self,
-        llm_client: Optional[LLMClient] = None,
-        rag_agent: Optional[RAGAgent] = None,
-        knowledge_agent: Optional[KnowledgeAgent] = None,
+        llm_client: LLMClient | None = None,
+        rag_agent: RAGAgent | None = None,
+        knowledge_agent: KnowledgeAgent | None = None,
     ) -> None:
         # 延迟取单例：未在构造时即建立 LLM/检索连接，降低启动开销
         self._llm_client = llm_client
@@ -90,7 +92,7 @@ class OrchestratorAgent:
         self._knowledge_agent = knowledge_agent
         # 会话状态：session_id -> {turn_count, failed_attempts}
         # 进程内字典存储，多实例部署需替换为 Redis
-        self._session_states: Dict[str, Dict[str, int]] = {}
+        self._session_states: dict[str, dict[str, int]] = {}
         self._agent_registry = self._build_agent_registry()
 
     @property
@@ -117,7 +119,7 @@ class OrchestratorAgent:
             self._knowledge_agent = get_knowledge_agent()
         return self._knowledge_agent
 
-    def _build_agent_registry(self) -> Dict[str, Callable[[str], str]]:
+    def _build_agent_registry(self) -> dict[str, Callable[[str], str]]:
         """构建 agent 路由表。
 
         knowledge_qa 默认走 KnowledgeAgent（混合检索+重排序），
@@ -138,7 +140,7 @@ class OrchestratorAgent:
     def orchestrate(
         self,
         query: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> OrchestratorResult:
         """调度主入口：意图识别 → 拆解 → 分发 → 整合 → 兜底。
 
@@ -255,7 +257,7 @@ class OrchestratorAgent:
 
         return intent_result
 
-    def _try_quick_intent(self, query: str) -> Optional[IntentResult]:
+    def _try_quick_intent(self, query: str) -> IntentResult | None:
         """关键词快通道：闲聊/转人工等高频意图直接识别，跳过 LLM。
 
         命中返回 IntentResult，未命中返回 None 走 LLM 路径。
@@ -268,10 +270,12 @@ class OrchestratorAgent:
             return IntentResult(
                 intent=Intent.CHITCHAT,
                 confidence=0.95,
-                sub_tasks=[{
-                    "agent_name": "chitchat",
-                    "input": query,
-                }],
+                sub_tasks=[
+                    {
+                        "agent_name": "chitchat",
+                        "input": query,
+                    }
+                ],
                 need_emotion_check=False,
             )
         # 转人工
@@ -279,10 +283,12 @@ class OrchestratorAgent:
             return IntentResult(
                 intent=Intent.TICKET,
                 confidence=0.9,
-                sub_tasks=[{
-                    "agent_name": "ticket",
-                    "input": query,
-                }],
+                sub_tasks=[
+                    {
+                        "agent_name": "ticket",
+                        "input": query,
+                    }
+                ],
                 need_emotion_check=False,
             )
         return None
@@ -342,7 +348,7 @@ class OrchestratorAgent:
             return self._keyword_based_intent(query)
 
     @staticmethod
-    def _parse_intent_json(raw: str) -> Dict[str, Any]:
+    def _parse_intent_json(raw: str) -> dict[str, Any]:
         """从 LLM 输出中提取 JSON。
 
         LLM 偶尔会包裹 markdown 代码块或附加说明，
@@ -360,9 +366,7 @@ class OrchestratorAgent:
         return json.loads(match.group(0))
 
     @staticmethod
-    def _build_intent_result_from_dict(
-        data: Dict[str, Any], fallback_query: str
-    ) -> IntentResult:
+    def _build_intent_result_from_dict(data: dict[str, Any], fallback_query: str) -> IntentResult:
         """把 LLM 返回的 dict 映射为 IntentResult。
 
         sub_tasks 缺失时按意图补一个默认子任务，保证下游分发有输入；
@@ -379,7 +383,7 @@ class OrchestratorAgent:
         confidence = max(0.0, min(1.0, confidence))
 
         raw_sub_tasks = data.get("sub_tasks") or []
-        sub_tasks: List[SubTask] = []
+        sub_tasks: list[SubTask] = []
         for item in raw_sub_tasks:
             if not isinstance(item, dict):
                 continue
@@ -391,12 +395,8 @@ class OrchestratorAgent:
             )
         if not sub_tasks:
             # unknown 无注册 handler，兜底用 chitchat 让分发有去处
-            default_agent = (
-                "chitchat" if intent == Intent.UNKNOWN else intent.value
-            )
-            sub_tasks.append(
-                SubTask(agent_name=default_agent, input=fallback_query)
-            )
+            default_agent = "chitchat" if intent == Intent.UNKNOWN else intent.value
+            sub_tasks.append(SubTask(agent_name=default_agent, input=fallback_query))
 
         return IntentResult(
             intent=intent,
@@ -416,9 +416,7 @@ class OrchestratorAgent:
             return IntentResult(
                 intent=Intent.EMOTION_SENSITIVE,
                 confidence=0.9,
-                sub_tasks=[
-                    SubTask(agent_name="emotion_sensitive", input=query)
-                ],
+                sub_tasks=[SubTask(agent_name="emotion_sensitive", input=query)],
                 need_emotion_check=True,
             )
 
@@ -439,9 +437,7 @@ class OrchestratorAgent:
             return IntentResult(
                 intent=Intent.BUSINESS_QUERY,
                 confidence=0.8,
-                sub_tasks=[
-                    SubTask(agent_name="business_query", input=query)
-                ],
+                sub_tasks=[SubTask(agent_name="business_query", input=query)],
             )
 
         # 3. 闲聊/问候
@@ -475,9 +471,7 @@ class OrchestratorAgent:
         return 0
 
     @staticmethod
-    def _should_prioritize_emotion(
-        intent_result: IntentResult, emotion_score: int
-    ) -> bool:
+    def _should_prioritize_emotion(intent_result: IntentResult, emotion_score: int) -> bool:
         """判断是否需要优先走情绪处理。
 
         意图已识别为情绪敏感，或情绪分超过阈值，都触发优先处理。
@@ -508,7 +502,7 @@ class OrchestratorAgent:
     # 任务拆解
     # ------------------------------------------------------------------
     @staticmethod
-    def _ensure_sub_tasks(intent_result: IntentResult, query: str) -> List[SubTask]:
+    def _ensure_sub_tasks(intent_result: IntentResult, query: str) -> list[SubTask]:
         """确保子任务列表非空。
 
         意图识别阶段通常已产出 sub_tasks，unknown 时补一个兜底子任务。
@@ -521,7 +515,7 @@ class OrchestratorAgent:
     # ------------------------------------------------------------------
     # 路由分发
     # ------------------------------------------------------------------
-    def _dispatch_subtasks(self, sub_tasks: List[SubTask]) -> None:
+    def _dispatch_subtasks(self, sub_tasks: list[SubTask]) -> None:
         """按 agent_name 分发子任务并回填 result。
 
         简单问题（单一子任务）直接派发；
@@ -564,9 +558,7 @@ class OrchestratorAgent:
             return rag_answer.answer
 
         # 默认路径：KnowledgeAgent 已含混合检索+重排序，开启 LLM 摘要生成最终答复
-        knowledge_answer = self.knowledge_agent.answer(
-            question=query, generate_summary=True
-        )
+        knowledge_answer = self.knowledge_agent.answer(question=query, generate_summary=True)
         if not knowledge_answer.hit:
             return "[未命中知识库]抱歉，知识库中未找到相关内容。"
         # answer 在 generate_summary=True 时非空；空兜底防止 LLM 异常返回空串
@@ -607,7 +599,7 @@ class OrchestratorAgent:
     # ------------------------------------------------------------------
     def _aggregate_results(
         self,
-        sub_tasks: List[SubTask],
+        sub_tasks: list[SubTask],
         intent_result: IntentResult,
     ) -> str:
         """汇总子任务结果为最终回复。
@@ -627,18 +619,14 @@ class OrchestratorAgent:
             return results[0]
 
         # 多子任务：按序号拼接，让用户能区分各部分来源
-        parts = [
-            f"[{index}] {result}" for index, result in enumerate(results, start=1)
-        ]
+        parts = [f"[{index}] {result}" for index, result in enumerate(results, start=1)]
         return "\n".join(parts)
 
     # ------------------------------------------------------------------
     # 会话状态与兜底
     # ------------------------------------------------------------------
     @staticmethod
-    def _is_resolved(
-        intent_result: IntentResult, sub_tasks: List[SubTask]
-    ) -> bool:
+    def _is_resolved(intent_result: IntentResult, sub_tasks: list[SubTask]) -> bool:
         """判断本轮是否真正解决用户问题。
 
         unknown 意图、子任务结果为占位文案或未命中知识库，均视为未解决，
@@ -656,9 +644,7 @@ class OrchestratorAgent:
                 return False
         return True
 
-    def _get_or_init_session(
-        self, session_id: Optional[str]
-    ) -> tuple[str, Dict[str, int]]:
+    def _get_or_init_session(self, session_id: str | None) -> tuple[str, dict[str, int]]:
         """获取或初始化会话状态。
 
         未传 session_id 时生成一个，便于无会话上下文的单次调用也能计数。
@@ -674,9 +660,7 @@ class OrchestratorAgent:
         return session_id, state
 
     @staticmethod
-    def _update_session_state(
-        state: Dict[str, int], is_resolved: bool
-    ) -> None:
+    def _update_session_state(state: dict[str, int], is_resolved: bool) -> None:
         """更新会话状态：解决则清零失败计数，否则累加。"""
         if is_resolved:
             state["failed_attempts"] = 0
@@ -687,7 +671,7 @@ class OrchestratorAgent:
     def _check_escalation_with_engine(
         query: str,
         session_id: str,
-        state: Dict[str, int],
+        state: dict[str, int],
         intent_result: IntentResult,
     ) -> bool:
         """调用 EscalationEngine 判断是否转人工。
@@ -711,9 +695,7 @@ class OrchestratorAgent:
             return decision.should_escalate
         except Exception as exc:
             # 引擎异常时降级到纯 failed_attempts 判断，保证主链路不中断
-            logger.warning(
-                "EscalationEngine 调用失败，降级 failed_attempts 判断：%s", exc
-            )
+            logger.warning("EscalationEngine 调用失败，降级 failed_attempts 判断：%s", exc)
             return state.get("failed_attempts", 0) >= ESCALATE_FAILED_THRESHOLD
 
     # ------------------------------------------------------------------
@@ -729,7 +711,7 @@ class OrchestratorAgent:
 
 
 # 模块级单例：调度器本身无状态（会话状态在实例内），进程内复用
-_orchestrator: Optional[OrchestratorAgent] = None
+_orchestrator: OrchestratorAgent | None = None
 
 
 def get_orchestrator() -> OrchestratorAgent:

@@ -39,8 +39,12 @@ models/
 
 # 设计方案与临时验证脚本（非项目核心代码）
 *项目设计方案*.docx
+*.docx
 bge_verify.py
 bge_verify_results.json
 check_eval.py
 ingest_test.py
 perf_bench.py
+
+# pip 安装日志（误产生）
+0.1.9

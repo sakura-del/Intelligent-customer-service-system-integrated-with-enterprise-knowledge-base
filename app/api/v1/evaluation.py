@@ -14,9 +14,8 @@ RAGAS 生成质量评估端点：
 - {CHROMA_PERSIST_DIR}/evaluation_reports/：检索评测报告
 - {CHROMA_PERSIST_DIR}/ragas_reports/：RAGAS 生成质量评测报告
 """
-from __future__ import annotations
 
-from typing import List
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -70,8 +69,8 @@ def run_evaluation_api(request: EvaluationRunRequest) -> EvaluationReport:
     return report
 
 
-@router.get("/reports", response_model=List[ReportSummary])
-def list_reports_api() -> List[ReportSummary]:
+@router.get("/reports", response_model=list[ReportSummary])
+def list_reports_api() -> list[ReportSummary]:
     """列出历史评测报告摘要，按时间倒序返回。"""
     summaries = get_evaluation_runner().list_reports()
     return [ReportSummary(**item) for item in summaries]
@@ -131,16 +130,14 @@ def run_ragas_evaluation_api(
     return report
 
 
-@router.get("/ragas/reports", response_model=List[RagasReportSummary])
-def list_ragas_reports_api() -> List[RagasReportSummary]:
+@router.get("/ragas/reports", response_model=list[RagasReportSummary])
+def list_ragas_reports_api() -> list[RagasReportSummary]:
     """列出 RAGAS 历史评测报告摘要，按时间倒序返回。"""
     summaries = get_ragas_evaluator().list_reports()
     return [RagasReportSummary(**item) for item in summaries]
 
 
-@router.get(
-    "/ragas/reports/{report_id}", response_model=RagasEvaluationReport
-)
+@router.get("/ragas/reports/{report_id}", response_model=RagasEvaluationReport)
 def get_ragas_report_api(report_id: str) -> RagasEvaluationReport:
     """查询单个 RAGAS 报告详情。
 

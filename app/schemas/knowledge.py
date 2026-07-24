@@ -3,7 +3,8 @@
 定义文档解析、切分、元数据标注与入库结果的数据契约，
 作为 parsers/ chunker/ metadata/ pipeline 模块间的统一结构。
 """
-from typing import Any, Dict, List, Optional
+
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +29,7 @@ class ParsedPage(BaseModel):
 
     page_number: int = Field(..., description="页码，从 1 开始")
     text: str = Field(..., description="该页的纯文本内容")
-    sections: List[SectionInfo] = Field(
+    sections: list[SectionInfo] = Field(
         default_factory=list,
         description="该页命中的章节标题列表，用于后续切分聚合",
     )
@@ -42,7 +43,7 @@ class ParsedDocument(BaseModel):
 
     source: str = Field(..., description="来源文件名或标识")
     file_type: str = Field(..., description="文件类型：pdf/docx/html/txt/md")
-    pages: List[ParsedPage] = Field(default_factory=list, description="解析后的页列表")
+    pages: list[ParsedPage] = Field(default_factory=list, description="解析后的页列表")
     doc_hash: str = Field("", description="文档内容哈希，用于去重与版本追踪")
 
 
@@ -55,7 +56,7 @@ class TextChunk(BaseModel):
     text: str = Field(..., description="片段文本内容")
     page_number: int = Field(1, description="所属页码")
     section: str = Field("", description="所属章节标题，多级用 / 拼接")
-    metadata: Dict[str, Any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="附加元数据，供 metadata 模块补充",
     )
@@ -77,12 +78,12 @@ class IngestResult(BaseModel):
         "unknown",
         description="向量化模式：bge / fallback，便于排查质量",
     )
-    error: Optional[str] = Field(None, description="错误信息，成功时为空")
+    error: str | None = Field(None, description="错误信息，成功时为空")
     # Task 16：文档管理与版本信息，默认空串保证旧调用方兼容
     doc_id: str = Field("", description="文档 ID，由 document_store 分配")
     version: str = Field("", description="本次入库对应的版本号，如 v1")
     # Task 16：可选质量校验报告，仅 validate_quality=true 时填充
-    quality_report: Optional[QualityReport] = Field(
+    quality_report: QualityReport | None = Field(
         None, description="质量校验报告，未启用质量校验时为空"
     )
 
@@ -120,17 +121,17 @@ class KnowledgeAnswer(BaseModel):
     """
 
     answer: str = Field("", description="最终给用户的回答文本；未启用 LLM 摘要时为空")
-    sources: List[str] = Field(
+    sources: list[str] = Field(
         default_factory=list,
         description="来源列表，格式如 '产品FAQ.md 第3页'",
     )
-    retrieved_chunks: List[RetrievedChunk] = Field(
+    retrieved_chunks: list[RetrievedChunk] = Field(
         default_factory=list,
         description="重排序后的 Top-K 知识片段",
     )
     confidence: float = Field(0.0, description="检索置信度，0-1 之间")
     hit: bool = Field(False, description="是否检索到相关知识")
-    rewritten_queries: List[str] = Field(
+    rewritten_queries: list[str] = Field(
         default_factory=list,
         description="查询改写产生的查询变体，便于调试",
     )

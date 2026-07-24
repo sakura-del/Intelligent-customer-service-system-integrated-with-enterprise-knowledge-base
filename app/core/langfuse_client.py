@@ -3,21 +3,21 @@
 未配置或初始化失败时降级 no-op（返回 None），保证主链路不受 Langfuse 影响。
 单例风格与 app/core/monitor.py 一致：模块级变量 + Lock + 双重检查。
 """
+
 from __future__ import annotations
 
 import threading
-from typing import Optional
 
 from app.core.logging import get_logger
 
 logger = get_logger("app.core.langfuse_client")
 
 # 模块级单例与锁：进程内复用同一 Langfuse 客户端
-_langfuse_client: Optional["Langfuse"] = None
+_langfuse_client: Langfuse | None = None
 _langfuse_lock = threading.Lock()
 
 
-def get_langfuse_client() -> Optional["Langfuse"]:
+def get_langfuse_client() -> Langfuse | None:
     """获取 Langfuse 客户端单例。
 
     未启用/密钥缺失/初始化失败时返回 None，调用方据此走 no-op 分支。
@@ -32,7 +32,7 @@ def get_langfuse_client() -> Optional["Langfuse"]:
     return _langfuse_client
 
 
-def _create_client() -> Optional["Langfuse"]:
+def _create_client() -> Langfuse | None:
     """按当前配置创建 Langfuse 客户端，失败时降级返回 None。"""
     from app.core.config import get_settings
 
@@ -91,9 +91,7 @@ def start_langfuse_trace(name: str, metadata: dict = None):
     if client is None:
         return None
     try:
-        context_manager = client.start_as_current_observation(
-            name=name, metadata=metadata or {}
-        )
+        context_manager = client.start_as_current_observation(name=name, metadata=metadata or {})
         observation = context_manager.__enter__()
         return (context_manager, observation)
     except Exception as exc:

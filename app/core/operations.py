@@ -10,12 +10,14 @@
 - 降级：聚合失败返回空统计，单检查项失败不影响其他
 - 不引入新依赖
 """
+
 from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -64,7 +66,7 @@ class OperationsCollector:
     def __init__(self, cache_ttl: float = DASHBOARD_CACHE_TTL_SECONDS) -> None:
         self._lock = threading.RLock()
         self._cache_ttl = cache_ttl
-        self._cache: Optional[OperationsDashboard] = None
+        self._cache: OperationsDashboard | None = None
         self._cache_at: float = 0.0
 
     # ------------------------------------------------------------------
@@ -95,16 +97,12 @@ class OperationsCollector:
         """聚合所有子统计，任一异常降级为空统计。"""
         session = self._safe_collect(self._collect_session_stats, SessionStats())
         ticket = self._safe_collect(self._collect_ticket_stats, TicketStats())
-        escalation = self._safe_collect(
-            self._collect_escalation_stats, EscalationStats()
-        )
+        escalation = self._safe_collect(self._collect_escalation_stats, EscalationStats())
         satisfaction = self._safe_collect(
             lambda: self._collect_satisfaction_stats(escalation, session),
             SatisfactionStats(),
         )
-        knowledge = self._safe_collect(
-            self._collect_knowledge_stats, KnowledgeStats()
-        )
+        knowledge = self._safe_collect(self._collect_knowledge_stats, KnowledgeStats())
         return OperationsDashboard(
             session=session,
             ticket=ticket,
@@ -115,9 +113,7 @@ class OperationsCollector:
         )
 
     @staticmethod
-    def _safe_collect(
-        collector: Callable[[], Any], fallback: Any
-    ) -> Any:
+    def _safe_collect(collector: Callable[[], Any], fallback: Any) -> Any:
         """安全执行子统计，异常时降级为 fallback。"""
         try:
             return collector()
@@ -157,17 +153,13 @@ class OperationsCollector:
         total = len(tickets)
         new_count = sum(1 for t in tickets if t.status == TicketStatus.pending)
         resolved_count = sum(
-            1
-            for t in tickets
-            if t.status in (TicketStatus.resolved, TicketStatus.closed)
+            1 for t in tickets if t.status in (TicketStatus.resolved, TicketStatus.closed)
         )
         unresolved_count = sum(
-            1
-            for t in tickets
-            if t.status in (TicketStatus.pending, TicketStatus.processing)
+            1 for t in tickets if t.status in (TicketStatus.pending, TicketStatus.processing)
         )
         # 按分类聚合
-        category_dist: Dict[str, int] = {}
+        category_dist: dict[str, int] = {}
         for t in tickets:
             key = t.category.value if hasattr(t.category, "value") else str(t.category)
             category_dist[key] = category_dist.get(key, 0) + 1
@@ -192,7 +184,7 @@ class OperationsCollector:
         escalated = [t for t in traces if t.get("escalate_to_human")]
         total = len(escalated)
         # 原因分布从 rule_matched 字段聚合（trace 中可能未记录，使用兜底键）
-        reason_dist: Dict[str, int] = {}
+        reason_dist: dict[str, int] = {}
         for t in escalated:
             reason = t.get("rule_matched") or "unknown"
             reason_dist[reason] = reason_dist.get(reason, 0) + 1
@@ -224,11 +216,7 @@ class OperationsCollector:
         if total_traces == 0:
             return SatisfactionStats()
         failed_count = int(overview.get("failed_count", 0))
-        escalation_rate = (
-            escalation.total_escalations / total_traces
-            if total_traces
-            else 0.0
-        )
+        escalation_rate = escalation.total_escalations / total_traces if total_traces else 0.0
         failure_rate = failed_count / total_traces if total_traces else 0.0
         score = SATISFACTION_BASE_SCORE
         score -= SATISFACTION_ESCALATION_PENALTY * escalation_rate
@@ -244,12 +232,11 @@ class OperationsCollector:
 
     def _collect_knowledge_stats(self) -> KnowledgeStats:
         """聚合知识库统计：总条目数、类型分布、近 7 天入库量。"""
-        from app.knowledge.document_store import get_document_store
         from app.knowledge.vectorstore import get_vector_store
 
         # 总条目数来自向量库
         total_entries = 0
-        type_dist: Dict[str, int] = {}
+        type_dist: dict[str, int] = {}
         try:
             store = get_vector_store()
             total_entries = int(store.count())
@@ -282,9 +269,7 @@ class OperationsCollector:
 
             doc_store = get_document_store()
             docs = doc_store.list_documents()
-            cutoff = datetime.now(timezone.utc) - timedelta(
-                days=RECENT_INGEST_WINDOW_DAYS
-            )
+            cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_INGEST_WINDOW_DAYS)
             count = 0
             for doc in docs:
                 updated = doc.get("updated_at", "")
@@ -329,7 +314,7 @@ class ReleaseChecklist:
 
     def __init__(self) -> None:
         # 检查项注册表：name -> callable 返回 (status, message)
-        self._checks: List[Dict[str, Any]] = [
+        self._checks: list[dict[str, Any]] = [
             {"name": "依赖完整性", "func": self._check_dependencies},
             {"name": "配置完整性", "func": self._check_config},
             {"name": "数据库连接", "func": self._check_database},
@@ -340,7 +325,7 @@ class ReleaseChecklist:
 
     def run_all_checks(self) -> ChecklistReport:
         """执行所有检查项，返回汇总报告。"""
-        items: List[CheckItem] = []
+        items: list[CheckItem] = []
         passed = failed = warned = skipped = 0
         for check in self._checks:
             item = self._run_single(check["name"], check["func"])
@@ -420,9 +405,7 @@ class ReleaseChecklist:
             )
         # 相似度阈值范围检查
         if not 0.0 <= settings.SIMILARITY_THRESHOLD <= 1.0:
-            issues.append(
-                f"SIMILARITY_THRESHOLD 越界：{settings.SIMILARITY_THRESHOLD}"
-            )
+            issues.append(f"SIMILARITY_THRESHOLD 越界：{settings.SIMILARITY_THRESHOLD}")
         if issues:
             return "warn", "；".join(issues)
         return "pass", "关键配置完整"
@@ -495,7 +478,7 @@ class ReleaseChecklist:
 # 单例管理
 # ----------------------------------------------------------------------
 
-_operations_collector: Optional[OperationsCollector] = None
+_operations_collector: OperationsCollector | None = None
 _operations_singleton_lock = threading.Lock()
 
 

@@ -13,11 +13,13 @@
 
 并行优化：复杂问题多子任务在 agent_node 内通过 ThreadPoolExecutor 并行执行。
 """
+
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, TypedDict
+from typing import Any, TypedDict
 
 from app.agents.dialog_agent import get_dialog_agent
 from app.agents.knowledge_agent import get_knowledge_agent
@@ -30,8 +32,8 @@ from app.core.context_manager import (
     get_context_manager,
     get_intent_detector,
 )
-from app.core.logging import get_logger
 from app.core.langfuse_client import finish_langfuse_trace, start_langfuse_trace
+from app.core.logging import get_logger
 from app.core.monitor import get_monitor
 from app.core.performance import get_hot_query_cache
 from app.core.session import session_manager
@@ -73,31 +75,31 @@ class AgentState(TypedDict, total=False):
     - escalation_card：转接时生成的人工上下文卡片（dict 形式）
     """
 
-    session_id: Optional[str]
-    user_id: Optional[str]
+    session_id: str | None
+    user_id: str | None
     message: str
     intent: str
-    sub_tasks: List[Dict[str, Any]]
+    sub_tasks: list[dict[str, Any]]
     emotion_score: float
     turn_count: int
     failed_attempts: int
-    history: List[Dict[str, Any]]
-    raw_results: Dict[str, Any]
+    history: list[dict[str, Any]]
+    raw_results: dict[str, Any]
     final_reply: str
-    sources: List[str]
+    sources: list[str]
     escalate_to_human: bool
     # 转接上下文卡片：escalate_node 生成，供人工客服接手参考
     # 以 dict 形式存储便于序列化与 API 响应直接展开
-    escalation_card: Optional[Dict[str, Any]]
+    escalation_card: dict[str, Any] | None
     # 监控追踪 ID：run_graph 入口生成，各节点埋点时回传给 Monitor
     # 测试中直接调用节点函数时可缺失，埋点自动跳过
-    trace_id: Optional[str]
+    trace_id: str | None
     # 分层摘要上下文文本（Task 14）：run_graph 入口由 ContextManager 生成
     # 供 dialog_node 注入 DialogContext.layered_summary，降低 token 消耗
-    layered_context_text: Optional[str]
+    layered_context_text: str | None
     # 意图切换检测结果（Task 14）：intent_node 前置检测后写入
     # 便于后续节点引用与日志追踪
-    intent_switch: Optional[Dict[str, Any]]
+    intent_switch: dict[str, Any] | None
 
 
 # ----------------------------------------------------------------------
@@ -105,7 +107,8 @@ class AgentState(TypedDict, total=False):
 # 每个执行器签名统一为 (query, state) -> dict，返回 {result, sources} 等
 # ----------------------------------------------------------------------
 
-def _execute_knowledge(query: str, state: AgentState) -> Dict[str, Any]:
+
+def _execute_knowledge(query: str, state: AgentState) -> dict[str, Any]:
     """知识问答：调用 KnowledgeAgent（混合检索+重排序+LLM 摘要）。
 
     若 KnowledgeAgent 不可用或抛异常，降级到 RAGAgent 保证链路可用。
@@ -130,9 +133,7 @@ def _execute_knowledge(query: str, state: AgentState) -> Dict[str, Any]:
         }
     except Exception as exc:
         # KnowledgeAgent 异常时降级到 RAGAgent，避免单点失败拖垮整条链路
-        logger.warning(
-            "KnowledgeAgent 执行失败，降级到 RAGAgent：%s", exc
-        )
+        logger.warning("KnowledgeAgent 执行失败，降级到 RAGAgent：%s", exc)
         rag_agent = get_rag_agent()
         rag_answer = rag_agent.answer(question=query, session_id=state.get("session_id"))
         if rag_answer.hit:
@@ -148,13 +149,16 @@ def _execute_knowledge(query: str, state: AgentState) -> Dict[str, Any]:
         }
 
 
-def _execute_business(query: str, state: AgentState) -> Dict[str, Any]:
+def _execute_business(query: str, state: AgentState) -> dict[str, Any]:
     """业务查询：占位实现，后续接入订单/会员等业务 agent。"""
-    return {"result": "该能力开发中，暂无法处理，建议转人工或稍后重试。",
-            "sources": [], "hit": False}
+    return {
+        "result": "该能力开发中，暂无法处理，建议转人工或稍后重试。",
+        "sources": [],
+        "hit": False,
+    }
 
 
-def _execute_emotion(query: str, state: AgentState) -> Dict[str, Any]:
+def _execute_emotion(query: str, state: AgentState) -> dict[str, Any]:
     """情绪处理：先安抚用户情绪，再引导描述具体问题。"""
     return {
         "result": (
@@ -167,13 +171,16 @@ def _execute_emotion(query: str, state: AgentState) -> Dict[str, Any]:
     }
 
 
-def _execute_ticket(query: str, state: AgentState) -> Dict[str, Any]:
+def _execute_ticket(query: str, state: AgentState) -> dict[str, Any]:
     """工单：占位实现，后续接入工单系统创建工单。"""
-    return {"result": "该能力开发中，暂无法处理，建议转人工或稍后重试。",
-            "sources": [], "hit": False}
+    return {
+        "result": "该能力开发中，暂无法处理，建议转人工或稍后重试。",
+        "sources": [],
+        "hit": False,
+    }
 
 
-def _execute_chitchat(query: str, state: AgentState) -> Dict[str, Any]:
+def _execute_chitchat(query: str, state: AgentState) -> dict[str, Any]:
     """闲聊：简单友好回应。"""
     if any(word in query for word in ("你好", "您好", "嗨", "在吗")):
         reply = "您好，很高兴为您服务，请问有什么可以帮您？"
@@ -187,7 +194,7 @@ def _execute_chitchat(query: str, state: AgentState) -> Dict[str, Any]:
 
 
 # agent_name -> 执行器映射，route_node 据此分发
-_AGENT_EXECUTORS: Dict[str, Callable[[str, AgentState], Dict[str, Any]]] = {
+_AGENT_EXECUTORS: dict[str, Callable[[str, AgentState], dict[str, Any]]] = {
     "knowledge_qa": _execute_knowledge,
     "business_query": _execute_business,
     "emotion_sensitive": _execute_emotion,
@@ -200,8 +207,9 @@ _AGENT_EXECUTORS: Dict[str, Callable[[str, AgentState], Dict[str, Any]]] = {
 # 节点实现
 # ----------------------------------------------------------------------
 
+
 def _record_step_safe(
-    trace_id: Optional[str],
+    trace_id: str | None,
     node: str,
     input_summary: Any,
     output_summary: Any,
@@ -215,15 +223,13 @@ def _record_step_safe(
     if not trace_id:
         return
     try:
-        get_monitor().record_step(
-            trace_id, node, input_summary, output_summary, duration_ms
-        )
+        get_monitor().record_step(trace_id, node, input_summary, output_summary, duration_ms)
     except Exception as exc:
         logger.warning("监控埋点失败 node=%s err=%s", node, exc)
 
 
 def _record_agent_call_safe(
-    trace_id: Optional[str],
+    trace_id: str | None,
     agent_name: str,
     input_text: Any,
     output_text: Any,
@@ -258,7 +264,7 @@ def intent_node(state: AgentState) -> AgentState:
 
     # === 前置：意图切换检测 ===
     # 在意图识别前检查是否切换话题，切换则重置槽位避免旧数据污染新意图
-    switch_result_dict: Optional[Dict[str, Any]] = None
+    switch_result_dict: dict[str, Any] | None = None
     if session_id:
         session = session_manager.get_session(session_id) or {}
         current_intent = session.get("current_intent")
@@ -266,9 +272,7 @@ def intent_node(state: AgentState) -> AgentState:
         if current_intent:
             try:
                 detector = get_intent_detector()
-                switch_result = detector.detect_switch(
-                    message, session_id, current_intent
-                )
+                switch_result = detector.detect_switch(message, session_id, current_intent)
                 switch_result_dict = switch_result.model_dump()
                 if switch_result.switched:
                     # 切换：重置槽位，保留 history 用于回溯
@@ -289,9 +293,7 @@ def intent_node(state: AgentState) -> AgentState:
 
     # 情绪优先：和 OrchestratorAgent 保持一致策略，避免 graph 与单 agent 行为分裂
     if orchestrator._should_prioritize_emotion(intent_result, emotion_score):
-        intent_result = orchestrator._override_to_emotion(
-            intent_result, message, emotion_score
-        )
+        intent_result = orchestrator._override_to_emotion(intent_result, message, emotion_score)
 
     sub_tasks = orchestrator._ensure_sub_tasks(intent_result, message)
 
@@ -384,8 +386,8 @@ def agent_node(state: AgentState) -> AgentState:
     执行后根据结果更新 failed_attempts，供后续条件边判断是否转人工。
     """
     sub_tasks = state.get("sub_tasks", [])
-    raw_results: Dict[str, Any] = {}
-    all_sources: List[str] = []
+    raw_results: dict[str, Any] = {}
+    all_sources: list[str] = []
 
     tasks = [
         (task.get("agent_name", ""), task.get("input", state.get("message", "")))
@@ -402,8 +404,7 @@ def agent_node(state: AgentState) -> AgentState:
         # 多子任务并行执行：IO 密集场景显著降低总延迟
         with ThreadPoolExecutor(max_workers=_AGENT_PARALLEL_WORKERS) as executor:
             futures = {
-                executor.submit(_dispatch_to_agent, name, inp, state): name
-                for name, inp in tasks
+                executor.submit(_dispatch_to_agent, name, inp, state): name for name, inp in tasks
             }
             for future in futures:
                 agent_name = futures[future]
@@ -471,9 +472,7 @@ def _route_after_agent(state: AgentState) -> str:
     return _NODE_DIALOG
 
 
-def _dispatch_to_agent(
-    agent_name: str, query: str, state: AgentState
-) -> Dict[str, Any]:
+def _dispatch_to_agent(agent_name: str, query: str, state: AgentState) -> dict[str, Any]:
     """根据 agent_name 调用对应执行器。
 
     未注册的 agent 返回占位结果，避免 KeyError 中断流程。
@@ -486,12 +485,19 @@ def _dispatch_to_agent(
         logger.warning("未注册的 agent：%s", agent_name)
         result = {"result": "该能力开发中，暂无法处理。", "sources": []}
         _record_agent_call_safe(
-            trace_id, agent_name, query, result["result"],
-            (time.perf_counter() - start) * 1000.0, success=False,
+            trace_id,
+            agent_name,
+            query,
+            result["result"],
+            (time.perf_counter() - start) * 1000.0,
+            success=False,
         )
         # 节点级 step 也记录一次，便于 route_path 包含 agent_name
         _record_step_safe(
-            trace_id, agent_name, query, result["result"],
+            trace_id,
+            agent_name,
+            query,
+            result["result"],
             (time.perf_counter() - start) * 1000.0,
         )
         return result
@@ -500,11 +506,18 @@ def _dispatch_to_agent(
         # 成功与否由 result 内容判断：占位文案或未命中标记视为未解决
         success = bool(result.get("result")) and "开发中" not in result.get("result", "")
         _record_agent_call_safe(
-            trace_id, agent_name, query, result.get("result", ""),
-            (time.perf_counter() - start) * 1000.0, success=success,
+            trace_id,
+            agent_name,
+            query,
+            result.get("result", ""),
+            (time.perf_counter() - start) * 1000.0,
+            success=success,
         )
         _record_step_safe(
-            trace_id, agent_name, query, result.get("result", ""),
+            trace_id,
+            agent_name,
+            query,
+            result.get("result", ""),
             (time.perf_counter() - start) * 1000.0,
         )
         return result
@@ -512,11 +525,18 @@ def _dispatch_to_agent(
         # 兜底：单个 agent 异常返回占位，不抛出避免拖垮整体
         logger.warning("agent 执行异常 name=%s err=%s", agent_name, exc)
         _record_agent_call_safe(
-            trace_id, agent_name, query, f"异常：{exc}",
-            (time.perf_counter() - start) * 1000.0, success=False,
+            trace_id,
+            agent_name,
+            query,
+            f"异常：{exc}",
+            (time.perf_counter() - start) * 1000.0,
+            success=False,
         )
         _record_step_safe(
-            trace_id, agent_name, query, f"异常：{exc}",
+            trace_id,
+            agent_name,
+            query,
+            f"异常：{exc}",
             (time.perf_counter() - start) * 1000.0,
         )
         return {"result": "该能力开发中，暂无法处理。", "sources": []}
@@ -549,7 +569,10 @@ def dialog_node(state: AgentState) -> AgentState:
     ):
         state["final_reply"] = raw_reply
         _record_step_safe(
-            trace_id, "dialog", raw_reply, raw_reply,
+            trace_id,
+            "dialog",
+            raw_reply,
+            raw_reply,
             (time.perf_counter() - start) * 1000.0,
         )
         return state
@@ -579,7 +602,10 @@ def dialog_node(state: AgentState) -> AgentState:
 
     state["final_reply"] = final_reply
     _record_step_safe(
-        trace_id, "dialog", raw_reply, final_reply,
+        trace_id,
+        "dialog",
+        raw_reply,
+        final_reply,
         (time.perf_counter() - start) * 1000.0,
     )
     return state
@@ -593,7 +619,7 @@ def _aggregate_raw_results(state: AgentState) -> str:
     sub_tasks = state.get("sub_tasks", [])
     raw_results = state.get("raw_results", {})
 
-    parts: List[str] = []
+    parts: list[str] = []
     for task in sub_tasks:
         agent_name = task.get("agent_name", "")
         result_data = raw_results.get(agent_name, {})
@@ -645,7 +671,7 @@ def escalate_node(state: AgentState) -> AgentState:
     return state
 
 
-def _build_escalation_card_safe(state: AgentState) -> Optional[Dict[str, Any]]:
+def _build_escalation_card_safe(state: AgentState) -> dict[str, Any] | None:
     """安全生成转接上下文卡片：失败时返回 None 不阻断主链路。
 
     复用 EscalationEngine.build_card，传入 state 中的会话信息，
@@ -685,6 +711,7 @@ def _derive_escalation_reason(state: AgentState) -> str:
 # ----------------------------------------------------------------------
 # LangGraph 构建与运行
 # ----------------------------------------------------------------------
+
 
 def _build_lang_graph():
     """构建 LangGraph 状态机。
@@ -737,6 +764,7 @@ def _build_lang_graph():
 # 同步编排器（fallback）
 # ----------------------------------------------------------------------
 
+
 class _SynchOrchestrator:
     """同步编排器：LangGraph 不可用时的 fallback。
 
@@ -777,8 +805,8 @@ class _SynchOrchestrator:
 
 # 模块级缓存：编译后的 graph 与 fallback 实例
 _compiled_graph = None
-_graph_init_error: Optional[Exception] = None
-_synch_orchestrator: Optional[_SynchOrchestrator] = None
+_graph_init_error: Exception | None = None
+_synch_orchestrator: _SynchOrchestrator | None = None
 
 
 def _get_compiled_graph():
@@ -800,9 +828,7 @@ def _get_compiled_graph():
     except Exception as exc:
         # LangGraph 不可用或构建失败：降级到同步编排器
         _graph_init_error = exc
-        logger.warning(
-            "LangGraph 构建失败，降级到同步编排器：%s", exc
-        )
+        logger.warning("LangGraph 构建失败，降级到同步编排器：%s", exc)
         return None
 
 
@@ -814,9 +840,7 @@ def _get_synch_orchestrator() -> _SynchOrchestrator:
     return _synch_orchestrator
 
 
-def run_graph(
-    message: str, session_id: Optional[str] = None
-) -> AgentState:
+def run_graph(message: str, session_id: str | None = None) -> AgentState:
     """运行多 Agent 编排，返回最终 AgentState。
 
     主路径：LangGraph 状态机；
@@ -879,9 +903,7 @@ def run_graph(
     # 在入口处一次性生成，节点直接复用，避免重复 LLM/规则摘要调用
     layered_context_text = ""
     try:
-        layered_context = get_context_manager().build_context(
-            effective_session_id
-        )
+        layered_context = get_context_manager().build_context(effective_session_id)
         layered_context_text = layered_context.full_context_text
     except Exception as exc:
         # 分层上下文生成失败不影响主链路，dialog_node 仍可走原 history 路径
@@ -940,9 +962,7 @@ def run_graph(
                 final_state = compiled.invoke(initial_state)
             except Exception as exc:
                 # LangGraph 运行时异常：降级同步编排，保证可用
-                logger.warning(
-                    "LangGraph 运行失败，降级到同步编排器：%s", exc
-                )
+                logger.warning("LangGraph 运行失败，降级到同步编排器：%s", exc)
                 final_state = _get_synch_orchestrator().run(initial_state)
         else:
             final_state = _get_synch_orchestrator().run(initial_state)

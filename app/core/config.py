@@ -3,6 +3,7 @@
 使用 pydantic-settings 从环境变量读取配置，
 提供全局 Settings 单例供各模块复用，避免重复读取。
 """
+
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,6 +31,12 @@ class Settings(BaseSettings):
 
     # 鉴权配置：为空时进入开发免鉴权模式
     API_KEY: str = ""
+
+    # CORS 白名单：逗号分隔的允许来源域名，留空时由 DEBUG 模式决定是否放开
+    ALLOWED_ORIGINS: str = ""
+
+    # 限流开关：默认开启，关闭后所有接口不再做速率限制
+    RATE_LIMIT_ENABLED: bool = True
 
     # LLM 配置（后续接入 RAG 使用）
     LLM_API_KEY: str = ""
@@ -99,6 +106,9 @@ class Settings(BaseSettings):
     RRF_K: int = 60
     RRF_VECTOR_WEIGHT: float = 0.6
     RRF_KEYWORD_WEIGHT: float = 0.4
+    # 并行召回超时秒数：向量与 BM25 并行执行的总等待上限，
+    # 超时后用已完成的召回结果降级，避免单路阻塞拖垮整体检索
+    RETRIEVAL_PARALLEL_TIMEOUT: int = 10
     # Reranker 参数：取 top-K 进入最终答案
     RERANK_TOP_K: int = 5
     # CrossEncoder 模型名：默认 BGE 系列中文重排序模型
@@ -111,6 +121,14 @@ class Settings(BaseSettings):
     WORKING_HOURS_END: int = 18
     # 时区：用于工作时间判断，默认上海时区
     TIMEZONE: str = "Asia/Shanghai"
+
+    # ===== 会话超时清理配置 =====
+    # 会话超时时间（秒），超过该时长无活动的会话将被清理，默认 30 分钟
+    # 与人工客服工作时间配合，避免长时间闲置会话占用内存
+    SESSION_TTL: int = 1800
+    # 清理间隔（秒），后台线程每隔该时长扫描一次过期会话，默认 5 分钟
+    # 间隔过短会增加锁竞争，过长则导致过期会话驻留更久
+    SESSION_CLEANUP_INTERVAL: int = 300
 
     # ===== 业务系统适配器配置（Task 15）=====
     # 适配器模式：mock=使用内存 mock；http=调用真实业务系统 REST API
@@ -148,8 +166,18 @@ class Settings(BaseSettings):
         """判断是否已配置 API Key，便于鉴权开关控制。"""
         return bool(self.API_KEY)
 
+    @property
+    def insecure_mode(self) -> bool:
+        """判断系统是否运行在不安全模式。
 
-@lru_cache()
+        当 API_KEY 为空时返回 True，表示系统未启用鉴权，
+        所有接口均可匿名访问，仅适用于本地开发调试。
+        生产环境必须配置 API_KEY 以确保该属性为 False。
+        """
+        return not self.API_KEY
+
+
+@lru_cache
 def get_settings() -> Settings:
     """获取全局 Settings 单例。
 

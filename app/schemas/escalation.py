@@ -7,10 +7,10 @@
 设计目标：让人工客服接手前能快速理解用户诉求与机器人的处理历程，
 减少重复询问，提升转接体验与解决效率。
 """
+
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -40,16 +40,10 @@ class EscalationDecision(BaseModel):
     rule_matched 用于审计与回放，便于排查"为什么转接了/没转接"。
     """
 
-    should_escalate: bool = Field(
-        False, description="是否应当转接人工"
-    )
+    should_escalate: bool = Field(False, description="是否应当转接人工")
     reason: str = Field("", description="转接原因（人类可读）")
-    priority: EscalationPriority = Field(
-        EscalationPriority.INFO, description="转接优先级"
-    )
-    rule_matched: str = Field(
-        "", description="命中的规则名，便于审计"
-    )
+    priority: EscalationPriority = Field(EscalationPriority.INFO, description="转接优先级")
+    rule_matched: str = Field("", description="命中的规则名，便于审计")
 
 
 class EscalationCard(BaseModel):
@@ -61,23 +55,17 @@ class EscalationCard(BaseModel):
     """
 
     session_id: str = Field(..., description="会话 ID")
-    user_id: Optional[str] = Field(None, description="用户标识")
+    user_id: str | None = Field(None, description="用户标识")
     member_level: str = Field("normal", description="会员等级")
-    history_ticket_count: int = Field(
-        0, description="用户历史工单数，反映用户过往诉求量"
-    )
+    history_ticket_count: int = Field(0, description="用户历史工单数，反映用户过往诉求量")
     turn_count: int = Field(0, description="本次对话已进行轮数")
-    conversation_summary: str = Field(
-        "", description="对话摘要：用户咨询的核心问题与当前状态"
-    )
-    attempted_solutions: List[str] = Field(
+    conversation_summary: str = Field("", description="对话摘要：用户咨询的核心问题与当前状态")
+    attempted_solutions: list[str] = Field(
         default_factory=list,
         description="智能客服已给出的建议列表，便于人工避免重复方案",
     )
     escalate_reason: str = Field("", description="本次转接的原因")
-    priority: EscalationPriority = Field(
-        EscalationPriority.INFO, description="转接优先级"
-    )
+    priority: EscalationPriority = Field(EscalationPriority.INFO, description="转接优先级")
 
 
 class HumanSolutionRecord(BaseModel):
@@ -89,7 +77,7 @@ class HumanSolutionRecord(BaseModel):
     """
 
     solution_id: str = Field(..., description="方案记录唯一 ID")
-    session_id: Optional[str] = Field(None, description="关联会话 ID")
+    session_id: str | None = Field(None, description="关联会话 ID")
     question: str = Field(..., description="用户原始问题")
     solution: str = Field(..., description="人工给出的解决方案")
     intent: str = Field("", description="标注意图，便于后续归类")
@@ -106,9 +94,7 @@ class HumanSolutionRequest(BaseModel):
     intent 可不传由系统自动标注。
     """
 
-    session_id: Optional[str] = Field(None, description="关联会话 ID")
+    session_id: str | None = Field(None, description="关联会话 ID")
     question: str = Field(..., description="用户原始问题")
     solution: str = Field(..., description="人工给出的解决方案")
-    intent: Optional[str] = Field(
-        None, description="标注意图；不传时由系统自动识别"
-    )
+    intent: str | None = Field(None, description="标注意图；不传时由系统自动识别")

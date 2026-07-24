@@ -6,10 +6,12 @@
 当 LLM_API_KEY 为空或调用失败时降级到 _MockLLM，
 基于检索片段拼接简单回复，保证无网络/无 Key 也能跑通端到端流程。
 """
+
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Generator, List, Optional
+from collections.abc import Generator
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -31,11 +33,11 @@ class _MockLLM:
 
     def chat(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.3,
-        context_chunks: Optional[List[str]] = None,
-        name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        context_chunks: list[str] | None = None,
+        name: str | None = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> str:
         """根据 messages 与检索片段拼一个简单回复。
@@ -64,13 +66,13 @@ class _MockLLM:
 
     def stream_chat(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.3,
-        context_chunks: Optional[List[str]] = None,
-        name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        context_chunks: list[str] | None = None,
+        name: str | None = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
-    ) -> Generator[Dict[str, Any], None, None]:
+    ) -> Generator[dict[str, Any], None, None]:
         """Mock 流式生成：按字符切片 yield token，模拟流式体验。
 
         每 2 个字符一组，间隔 10ms，让前端能看到打字效果，
@@ -88,9 +90,9 @@ class _MockLLM:
 
 
 def _inject_langfuse_tracing(
-    kwargs: Dict[str, Any],
-    name: Optional[str],
-    metadata: Optional[Dict[str, Any]],
+    kwargs: dict[str, Any],
+    name: str | None,
+    metadata: dict[str, Any] | None,
 ) -> None:
     """当 Langfuse 启用且 name/metadata 非空时，向 kwargs 注入 extra_body。
 
@@ -111,7 +113,7 @@ def _inject_langfuse_tracing(
         logger.warning("Langfuse 状态检查失败，跳过 extra_body 注入：%s", exc)
         return
     # 合并已有 extra_body，避免覆盖调用方传入的其他自定义字段
-    extra_body: Dict[str, Any] = dict(kwargs.get("extra_body") or {})
+    extra_body: dict[str, Any] = dict(kwargs.get("extra_body") or {})
     if metadata:
         extra_body["metadata"] = metadata
     if name:
@@ -132,9 +134,9 @@ class LLMClient:
     def __init__(
         self,
         *,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
     ) -> None:
         """构造 LLM 客户端。
 
@@ -146,7 +148,7 @@ class LLMClient:
         self.base_url = base_url if base_url is not None else settings.LLM_BASE_URL
         self.model = model if model is not None else settings.LLM_MODEL
         self._client = None
-        self._mock: Optional[_MockLLM] = None
+        self._mock: _MockLLM | None = None
 
         # 提前判断：无 Key 直接走 mock，避免每次调用都重试
         if not self.api_key:
@@ -199,11 +201,12 @@ class LLMClient:
 
     def chat(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.3,
-        context_chunks: Optional[List[str]] = None,
-        name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        context_chunks: list[str] | None = None,
+        name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        model: str | None = None,
         **kwargs: Any,
     ) -> str:
         """调用 LLM 生成回复。
@@ -212,6 +215,10 @@ class LLMClient:
         context_chunks 用于 mock 模式拼接，真实模式下忽略以节省 token。
         name/metadata 用于 Langfuse 追踪（标记 prompt name 与版本等），
         Langfuse 未启用或为空时忽略，保证现有调用行为不变。
+
+        model：可选，临时使用该模型发起请求而不修改 self.model 属性，
+        用于 ModelRouter 在不引发竞态条件的前提下切换模型；
+        为 None 时使用 self.model，保持向后兼容。
         """
         # 1. mock 模式直接返回拼接结果
         if self._mock is not None:
@@ -236,10 +243,13 @@ class LLMClient:
         # Langfuse 启用且 name/metadata 非空时注入 extra_body，否则 no-op
         _inject_langfuse_tracing(kwargs, name, metadata)
 
+        # 实际使用的模型：传入 model 优先，否则用 self.model（向后兼容）
+        # 不修改 self.model 属性，避免高并发下多线程读到错误的 model
+        actual_model = model or self.model
         try:
             assert self._client is not None  # 仅供类型检查器收敛
             response = self._client.chat.completions.create(
-                model=self.model,
+                model=actual_model,
                 messages=messages,
                 temperature=temperature,
                 **kwargs,
@@ -266,13 +276,14 @@ class LLMClient:
 
     def stream_chat(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.3,
-        context_chunks: Optional[List[str]] = None,
-        name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        context_chunks: list[str] | None = None,
+        name: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        model: str | None = None,
         **kwargs: Any,
-    ) -> Generator[Dict[str, Any], None, None]:
+    ) -> Generator[dict[str, Any], None, None]:
         """流式调用 LLM，逐 token yield。
 
         协议：
@@ -283,6 +294,10 @@ class LLMClient:
         mock 模式按字符切片模拟流式；真实模式调用 OpenAI SDK 的 stream=True。
         出错时降级 yield error 事件，保证调用方拿到统一协议。
         name/metadata 用于 Langfuse 追踪，未启用或为空时忽略，保证向后兼容。
+
+        model：可选，临时使用该模型发起请求而不修改 self.model 属性，
+        用于 ModelRouter 在不引发竞态条件的前提下切换模型；
+        为 None 时使用 self.model，保持向后兼容。
         """
         # 1. mock 模式：直接走 _MockLLM.stream_chat 切片 yield
         if self._mock is not None:
@@ -308,29 +323,38 @@ class LLMClient:
         # Langfuse 启用且 name/metadata 非空时注入 extra_body，否则 no-op
         _inject_langfuse_tracing(kwargs, name, metadata)
 
+        # 实际使用的模型：传入 model 优先，否则用 self.model（向后兼容）
+        # 不修改 self.model 属性，避免高并发下多线程读到错误的 model
+        actual_model = model or self.model
         yield from self._stream_from_openai(
             messages=messages,
             temperature=temperature,
             context_chunks=context_chunks,
+            model=actual_model,
             **kwargs,
         )
 
     def _stream_from_openai(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.3,
-        context_chunks: Optional[List[str]] = None,
+        context_chunks: list[str] | None = None,
+        model: str | None = None,
         **kwargs: Any,
-    ) -> Generator[Dict[str, Any], None, None]:
+    ) -> Generator[dict[str, Any], None, None]:
         """调用 OpenAI SDK 的流式接口并转换为统一协议。
 
         SDK 异常时 yield error 事件，避免抛出中断整个流；
         空响应时降级到 _MockLLM 保证有内容输出。
+
+        model：由 stream_chat 计算后传入，为 None 时兜底使用 self.model。
         """
+        # 兜底：stream_chat 已计算 actual_model，此处防御性兜底
+        actual_model = model or self.model
         try:
             assert self._client is not None
             response = self._client.chat.completions.create(
-                model=self.model,
+                model=actual_model,
                 messages=messages,
                 temperature=temperature,
                 stream=True,
@@ -343,7 +367,7 @@ class LLMClient:
             return
 
         # 逐 chunk 提取 delta.content，累积成完整文本
-        full_text_parts: List[str] = []
+        full_text_parts: list[str] = []
         try:
             for chunk in response:
                 content = _extract_delta_content(chunk)
@@ -394,7 +418,7 @@ def _extract_delta_content(chunk: Any) -> str:
 
 def _slice_text_to_stream(
     text: str, chunk_size: int = 2, sleep_seconds: float = 0.01
-) -> Generator[Dict[str, Any], None, None]:
+) -> Generator[dict[str, Any], None, None]:
     """把完整文本切片成 token 流，模拟流式生成。
 
     每 chunk_size 个字符一组，组间 sleep sleep_seconds 秒，
@@ -413,9 +437,9 @@ def _slice_text_to_stream(
 
 
 # 模块级单例：LLM 客户端无状态，进程内复用
-_llm_client: Optional[LLMClient] = None
+_llm_client: LLMClient | None = None
 # 小模型客户端单例：未配置 SMALL_LLM_API_KEY 时为 None，调用方降级到主 LLM
-_small_llm_client: Optional[LLMClient] = None
+_small_llm_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:
@@ -432,7 +456,7 @@ def reset_llm_client() -> None:
     _llm_client = None
 
 
-def get_small_llm_client() -> Optional[LLMClient]:
+def get_small_llm_client() -> LLMClient | None:
     """获取小模型 LLMClient 单例。
 
     未配置 SMALL_LLM_API_KEY 时返回 None，调用方应降级到主 LLMClient，

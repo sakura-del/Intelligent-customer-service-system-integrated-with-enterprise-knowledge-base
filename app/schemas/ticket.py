@@ -4,11 +4,11 @@
 作为 TicketAgent 与 TicketStore 之间的数据契约，
 同时供上游调度器（orchestrator/graph）后续集成时引用。
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -61,18 +61,16 @@ class Ticket(BaseModel):
     """
 
     ticket_id: str = Field(..., description="工单唯一标识，自动生成")
-    user_id: Optional[str] = Field(None, description="用户标识，匿名场景可为空")
+    user_id: str | None = Field(None, description="用户标识，匿名场景可为空")
     title: str = Field(..., description="工单标题，由问题描述提炼")
     description: str = Field(..., description="问题描述详情")
     category: TicketCategory = Field(..., description="工单分类")
     priority: TicketPriority = Field(..., description="优先级")
-    status: TicketStatus = Field(
-        TicketStatus.pending, description="工单状态，默认待处理"
-    )
+    status: TicketStatus = Field(TicketStatus.pending, description="工单状态，默认待处理")
     # 关键附加信息：订单/产品/联系方式，便于人工跟进
-    related_order: Optional[str] = Field(None, description="相关订单号")
-    related_product: Optional[str] = Field(None, description="相关产品名")
-    contact: Optional[str] = Field(None, description="用户联系方式")
+    related_order: str | None = Field(None, description="相关订单号")
+    related_product: str | None = Field(None, description="相关产品名")
+    contact: str | None = Field(None, description="用户联系方式")
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="创建时间（UTC）",

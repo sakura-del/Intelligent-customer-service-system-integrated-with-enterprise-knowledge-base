@@ -18,6 +18,7 @@
 RAGAS 调用兼容：ragas 0.2.x API 在不同小版本有差异，
 此处用 try-except 包裹导入与调用，失败时记录错误并返回降级报告。
 """
+
 from __future__ import annotations
 
 import json
@@ -26,7 +27,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -116,8 +117,7 @@ def _build_default_testset() -> RagasTestSet:
         RagasTestCase(
             question="换货期限是多久？",
             ground_truth=(
-                "换货期限为收货后 7 天内，"
-                "仅支持同款商品的规格、颜色、尺码变更，不支持跨款换货。"
+                "换货期限为收货后 7 天内，仅支持同款商品的规格、颜色、尺码变更，不支持跨款换货。"
             ),
         ),
         RagasTestCase(
@@ -148,8 +148,7 @@ def _build_default_testset() -> RagasTestSet:
         RagasTestCase(
             question="知识库支持哪些文档格式？",
             ground_truth=(
-                "知识库支持 Markdown、PDF、Word、HTML、TXT 五种文档格式，"
-                "单文件最大 50MB。"
+                "知识库支持 Markdown、PDF、Word、HTML、TXT 五种文档格式，单文件最大 50MB。"
             ),
         ),
         RagasTestCase(
@@ -189,9 +188,9 @@ class RagasEvaluator:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         # 报告缓存：report_id -> RagasEvaluationReport，避免重复读盘
-        self._report_cache: Dict[str, RagasEvaluationReport] = {}
+        self._report_cache: dict[str, RagasEvaluationReport] = {}
 
-    def load_testset(self, path: Optional[str] = None) -> RagasTestSet:
+    def load_testset(self, path: str | None = None) -> RagasTestSet:
         """加载测试集，path 为空或加载失败时用内置默认集。"""
         if not path:
             return DEFAULT_TESTSET.model_copy()
@@ -211,8 +210,8 @@ class RagasEvaluator:
 
     def run(
         self,
-        testset: Optional[RagasTestSet] = None,
-        top_k: Optional[int] = None,
+        testset: RagasTestSet | None = None,
+        top_k: int | None = None,
     ) -> RagasEvaluationReport:
         """执行 RAGAS 评测：检索 → 生成答案 → LLM 评分 → 聚合报告。
 
@@ -228,7 +227,7 @@ class RagasEvaluator:
             effective_testset = testset or DEFAULT_TESTSET
             return self._run_evaluation(effective_testset, top_k)
 
-    def list_reports(self) -> List[Dict[str, object]]:
+    def list_reports(self) -> list[dict[str, object]]:
         """列出历史 RAGAS 报告摘要，按时间倒序返回。"""
         with self._lock:
             reports = self._load_all_reports()
@@ -237,9 +236,7 @@ class RagasEvaluator:
             summaries.sort(key=lambda x: x["created_at"], reverse=True)
             return summaries
 
-    def get_report(
-        self, report_id: str
-    ) -> Optional[RagasEvaluationReport]:
+    def get_report(self, report_id: str) -> RagasEvaluationReport | None:
         """查询单个报告详情，不存在时返回 None。"""
         with self._lock:
             if report_id in self._report_cache:
@@ -253,16 +250,12 @@ class RagasEvaluator:
                 self._report_cache[report_id] = report
                 return report
             except Exception as exc:
-                logger.warning(
-                    "读取 RAGAS 报告失败 report_id=%s：%s", report_id, exc
-                )
+                logger.warning("读取 RAGAS 报告失败 report_id=%s：%s", report_id, exc)
                 return None
 
     # ----- 内部实现 -----
 
-    def _run_evaluation(
-        self, testset: RagasTestSet, top_k: Optional[int]
-    ) -> RagasEvaluationReport:
+    def _run_evaluation(self, testset: RagasTestSet, top_k: int | None) -> RagasEvaluationReport:
         """单次 RAGAS 评测核心逻辑：检索生成 → LLM 评分 → 聚合。"""
         start = time.time()
         # 1. 收集每条用例的 question/answer/contexts/ground_truth
@@ -272,7 +265,7 @@ class RagasEvaluator:
         metrics_per_case = self._compute_ragas_metrics(samples)
 
         # 3. 组装单条详情
-        details: List[RagasCaseDetail] = []
+        details: list[RagasCaseDetail] = []
         for sample, metrics in zip(samples, metrics_per_case):
             details.append(
                 RagasCaseDetail(
@@ -315,9 +308,7 @@ class RagasEvaluator:
         )
         return report
 
-    def _collect_samples(
-        self, testset: RagasTestSet, top_k: Optional[int]
-    ) -> List[Dict[str, Any]]:
+    def _collect_samples(self, testset: RagasTestSet, top_k: int | None) -> list[dict[str, Any]]:
         """对每条用例执行检索与生成，收集 RAGAS 评分所需的样本。
 
         每条样本包含：question, answer, contexts, ground_truth。
@@ -327,14 +318,12 @@ class RagasEvaluator:
         from app.agents.rag_agent import get_rag_agent
 
         agent = get_rag_agent()
-        samples: List[Dict[str, Any]] = []
+        samples: list[dict[str, Any]] = []
         # 检索结果缓存：相同 question 不重复检索，避免重复计算
-        retrieve_cache: Dict[str, List[str]] = {}
+        retrieve_cache: dict[str, list[str]] = {}
 
         for case in testset.cases:
-            sample = self._collect_single_sample(
-                case, agent, top_k, retrieve_cache
-            )
+            sample = self._collect_single_sample(case, agent, top_k, retrieve_cache)
             samples.append(sample)
         return samples
 
@@ -342,24 +331,20 @@ class RagasEvaluator:
     def _collect_single_sample(
         case: RagasTestCase,
         agent: Any,
-        top_k: Optional[int],
-        retrieve_cache: Dict[str, List[str]],
-    ) -> Dict[str, Any]:
+        top_k: int | None,
+        retrieve_cache: dict[str, list[str]],
+    ) -> dict[str, Any]:
         """收集单条用例的样本数据：检索 contexts + 生成 answer。
 
         复用 RAGAgent.answer 完成检索+生成链路，并从 retrieved_chunks
         提取 contexts 文本列表供 RAGAS 评分。
         """
         try:
-            rag_answer = agent.answer(
-                question=case.question, top_k=top_k
-            )
+            rag_answer = agent.answer(question=case.question, top_k=top_k)
             # 优先复用缓存：相同问题不重复检索
             contexts = retrieve_cache.get(case.question)
             if contexts is None:
-                contexts = [
-                    chunk.text for chunk in rag_answer.retrieved_chunks
-                ]
+                contexts = [chunk.text for chunk in rag_answer.retrieved_chunks]
                 retrieve_cache[case.question] = contexts
             return {
                 "question": case.question,
@@ -383,9 +368,7 @@ class RagasEvaluator:
                 "error": str(exc),
             }
 
-    def _compute_ragas_metrics(
-        self, samples: List[Dict[str, Any]]
-    ) -> List[Dict[str, float]]:
+    def _compute_ragas_metrics(self, samples: list[dict[str, Any]]) -> list[dict[str, float]]:
         """调用 RAGAS 批量计算四项指标。
 
         ragas 未安装或调用异常时返回全零指标，不中断评测。
@@ -398,15 +381,11 @@ class RagasEvaluator:
             return self._call_ragas_evaluate(samples)
         except Exception as exc:
             # RAGAS 调用失败：降级返回全零指标，保证评测不中断
-            logger.warning(
-                "RAGAS 评估调用失败，降级返回零指标：%s", exc
-            )
+            logger.warning("RAGAS 评估调用失败，降级返回零指标：%s", exc)
             return [dict(_ZERO_METRICS) for _ in samples]
 
     @staticmethod
-    def _call_ragas_evaluate(
-        samples: List[Dict[str, Any]]
-    ) -> List[Dict[str, float]]:
+    def _call_ragas_evaluate(samples: list[dict[str, Any]]) -> list[dict[str, float]]:
         """调用 ragas.evaluate 计算指标，返回每条样本的指标字典。
 
         兼容 ragas 0.2.x 的 API：
@@ -446,7 +425,7 @@ class RagasEvaluator:
         return RagasEvaluator._parse_ragas_result(result, len(samples))
 
     @staticmethod
-    def _build_ragas_llm() -> Optional[Any]:
+    def _build_ragas_llm() -> Any | None:
         """构造 RAGAS 评估所需的 LLM wrapper。
 
         复用现有 LLMClient 的 OpenAI 兼容接口，避免引入额外 LLM 依赖。
@@ -492,16 +471,14 @@ class RagasEvaluator:
                     base_url=settings.LLM_BASE_URL,
                 )
             except Exception as fallback_exc:
-                logger.warning(
-                    "OpenAI 客户端构造也失败：%s", fallback_exc
-                )
+                logger.warning("OpenAI 客户端构造也失败：%s", fallback_exc)
                 return None
         except Exception as exc:
             logger.warning("RAGAS LLM wrapper 构造失败：%s", exc)
             return None
 
     @staticmethod
-    def _build_ragas_dataset(samples: List[Dict[str, Any]]) -> Any:
+    def _build_ragas_dataset(samples: list[dict[str, Any]]) -> Any:
         """构造 RAGAS evaluate 接受的数据集对象。
 
         ragas 0.2.x 推荐使用 EvaluationDataset，由 Dataset 字典列表构造；
@@ -528,9 +505,7 @@ class RagasEvaluator:
             return EvaluationDataset(single_samples)
         except ImportError:
             # 旧版 ragas 接受字典列表 / Dataset，回退构造
-            logger.info(
-                "ragas EvaluationDataset 不可用，回退到字典列表格式"
-            )
+            logger.info("ragas EvaluationDataset 不可用，回退到字典列表格式")
             return [
                 {
                     "question": s["question"],
@@ -542,9 +517,7 @@ class RagasEvaluator:
             ]
         except Exception as exc:
             # SingleTurnSample 字段名差异等：回退到字典列表
-            logger.warning(
-                "EvaluationDataset 构造失败，回退字典列表：%s", exc
-            )
+            logger.warning("EvaluationDataset 构造失败，回退字典列表：%s", exc)
             return [
                 {
                     "question": s["question"],
@@ -556,9 +529,7 @@ class RagasEvaluator:
             ]
 
     @staticmethod
-    def _parse_ragas_result(
-        result: Any, sample_count: int
-    ) -> List[Dict[str, float]]:
+    def _parse_ragas_result(result: Any, sample_count: int) -> list[dict[str, float]]:
         """解析 RAGAS evaluate 返回的结果，统一为每条样本的指标字典列表。
 
         兼容多种返回形态：
@@ -576,15 +547,13 @@ class RagasEvaluator:
         # 1. 优先尝试 to_pandas：ragas 0.2.x Result 对象常见入口
         try:
             df = result.to_pandas()
-            results: List[Dict[str, float]] = []
+            results: list[dict[str, float]] = []
             for idx in range(len(df)):
-                row_metrics: Dict[str, float] = {}
+                row_metrics: dict[str, float] = {}
                 for key in metric_keys:
                     if key in df.columns:
                         value = df.iloc[idx][key]
-                        row_metrics[key] = (
-                            float(value) if value is not None else 0.0
-                        )
+                        row_metrics[key] = float(value) if value is not None else 0.0
                     else:
                         row_metrics[key] = 0.0
                 results.append(row_metrics)
@@ -600,9 +569,7 @@ class RagasEvaluator:
                 row_metrics = {}
                 for key in metric_keys:
                     value = item.get(key) if isinstance(item, dict) else None
-                    row_metrics[key] = (
-                        float(value) if value is not None else 0.0
-                    )
+                    row_metrics[key] = float(value) if value is not None else 0.0
                 results.append(row_metrics)
             if results:
                 return results
@@ -618,9 +585,7 @@ class RagasEvaluator:
                     col = result.get(key, [])
                     if isinstance(col, list) and idx < len(col):
                         value = col[idx]
-                        row_metrics[key] = (
-                            float(value) if value is not None else 0.0
-                        )
+                        row_metrics[key] = float(value) if value is not None else 0.0
                     else:
                         row_metrics[key] = 0.0
                 results.append(row_metrics)
@@ -635,24 +600,16 @@ class RagasEvaluator:
 
     @staticmethod
     def _aggregate_metrics(
-        details: List[RagasCaseDetail],
-    ) -> Dict[str, float]:
+        details: list[RagasCaseDetail],
+    ) -> dict[str, float]:
         """聚合所有用例的指标：取算术平均，无有效用例时返回全零。"""
         if not details:
             return dict(_ZERO_METRICS)
         return {
-            "faithfulness": round(
-                sum(d.faithfulness for d in details) / len(details), 4
-            ),
-            "answer_relevancy": round(
-                sum(d.answer_relevancy for d in details) / len(details), 4
-            ),
-            "context_precision": round(
-                sum(d.context_precision for d in details) / len(details), 4
-            ),
-            "context_recall": round(
-                sum(d.context_recall for d in details) / len(details), 4
-            ),
+            "faithfulness": round(sum(d.faithfulness for d in details) / len(details), 4),
+            "answer_relevancy": round(sum(d.answer_relevancy for d in details) / len(details), 4),
+            "context_precision": round(sum(d.context_precision for d in details) / len(details), 4),
+            "context_recall": round(sum(d.context_recall for d in details) / len(details), 4),
         }
 
     @staticmethod
@@ -690,9 +647,9 @@ class RagasEvaluator:
                 exc,
             )
 
-    def _load_all_reports(self) -> List[RagasEvaluationReport]:
+    def _load_all_reports(self) -> list[RagasEvaluationReport]:
         """加载所有持久化 RAGAS 报告。"""
-        reports: List[RagasEvaluationReport] = []
+        reports: list[RagasEvaluationReport] = []
         reports_dir = self._reports_dir()
         if not reports_dir.exists():
             return reports
@@ -701,15 +658,13 @@ class RagasEvaluator:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 reports.append(RagasEvaluationReport(**payload))
             except Exception as exc:
-                logger.warning(
-                    "加载 RAGAS 报告失败 path=%s：%s", path, exc
-                )
+                logger.warning("加载 RAGAS 报告失败 path=%s：%s", path, exc)
         return reports
 
     @staticmethod
     def _to_summary(
         report: RagasEvaluationReport,
-    ) -> Dict[str, object]:
+    ) -> dict[str, object]:
         """将报告转为摘要字典，用于列表展示。"""
         return {
             "report_id": report.report_id,
@@ -749,7 +704,7 @@ def is_ragas_available() -> bool:
 # 模块级单例：评测状态进程内共享
 # ----------------------------------------------------------------------
 
-_ragas_evaluator: Optional[RagasEvaluator] = None
+_ragas_evaluator: RagasEvaluator | None = None
 _evaluator_lock = threading.Lock()
 
 

@@ -8,11 +8,11 @@
 为什么需要查询改写：用户提问往往包含「请问」「怎么办」等口语
 噪声词，与文档语言风格不一致，会显著降低 BM25 与向量召回质量。
 """
+
 from __future__ import annotations
 
 import json
 import re
-from typing import List, Optional
 
 from app.agents.llm_client import LLMClient, get_llm_client
 from app.core.logging import get_logger
@@ -21,12 +21,65 @@ logger = get_logger("app.knowledge.query_rewriter")
 
 # 中文常见停用词与口语噪声：用于 LLM 不可用时的兜底分词清洗
 _STOPWORDS = {
-    "的", "了", "是", "在", "我", "有", "和", "就", "不", "人", "都", "一",
-    "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有",
-    "看", "好", "自己", "这", "那", "它", "他", "她", "们", "什么", "怎么",
-    "怎么", "怎样", "怎么办", "请问", "麻烦", "一下", "一下吗", "吗", "呢",
-    "啊", "吧", "哦", "嗯", "想", "需要", "求", "帮", "帮忙", "谢谢",
-    "一下", "可以", "能", "能够", "应该", "如何", "为何", "为何",
+    "的",
+    "了",
+    "是",
+    "在",
+    "我",
+    "有",
+    "和",
+    "就",
+    "不",
+    "人",
+    "都",
+    "一",
+    "一个",
+    "上",
+    "也",
+    "很",
+    "到",
+    "说",
+    "要",
+    "去",
+    "你",
+    "会",
+    "着",
+    "没有",
+    "看",
+    "好",
+    "自己",
+    "这",
+    "那",
+    "它",
+    "他",
+    "她",
+    "们",
+    "什么",
+    "怎么",
+    "怎样",
+    "怎么办",
+    "请问",
+    "麻烦",
+    "一下",
+    "一下吗",
+    "吗",
+    "呢",
+    "啊",
+    "吧",
+    "哦",
+    "嗯",
+    "想",
+    "需要",
+    "求",
+    "帮",
+    "帮忙",
+    "谢谢",
+    "可以",
+    "能",
+    "能够",
+    "应该",
+    "如何",
+    "为何",
 }
 
 # 单条改写查询最大字符数：避免过长噪声污染召回
@@ -43,7 +96,7 @@ class QueryRewriter:
     保证无网络/无 Key 环境下仍能改善召回。
     """
 
-    def __init__(self, llm_client: Optional[LLMClient] = None) -> None:
+    def __init__(self, llm_client: LLMClient | None = None) -> None:
         # 延迟取单例，便于测试注入 mock 实现
         self._llm_client = llm_client
 
@@ -53,7 +106,7 @@ class QueryRewriter:
             self._llm_client = get_llm_client()
         return self._llm_client
 
-    def rewrite(self, question: str, num_variants: int = 2) -> List[str]:
+    def rewrite(self, question: str, num_variants: int = 2) -> list[str]:
         """改写问题，返回检索友好的查询列表。
 
         num_variants 控制返回的查询数量（含原查询去重后），
@@ -64,7 +117,7 @@ class QueryRewriter:
 
         # 始终保留原查询：避免改写丢失用户意图
         normalized = question.strip()
-        queries: List[str] = [normalized]
+        queries: list[str] = [normalized]
 
         # LLM 真实可用时走多查询改写路径
         if not self.llm_client.is_mock:
@@ -85,7 +138,7 @@ class QueryRewriter:
         # 截断到目标变体数量，控制下游成本
         return queries[: max(num_variants, 1)]
 
-    def _rewrite_with_llm(self, question: str, num_variants: int) -> List[str]:
+    def _rewrite_with_llm(self, question: str, num_variants: int) -> list[str]:
         """调用 LLM 生成多个检索友好查询变体。
 
         通过 system prompt 约束输出为 JSON 数组，便于稳定解析；
@@ -119,7 +172,7 @@ class QueryRewriter:
             return []
 
     @staticmethod
-    def _parse_llm_queries(reply: str) -> List[str]:
+    def _parse_llm_queries(reply: str) -> list[str]:
         """解析 LLM 返回的 JSON 数组为查询列表。
 
         LLM 偶尔会输出多余文本，尝试提取首个 JSON 数组片段；
@@ -143,7 +196,9 @@ class QueryRewriter:
             try:
                 data = json.loads(match.group(0))
                 if isinstance(data, list):
-                    return [str(item).strip()[:_MAX_QUERY_LEN] for item in data if str(item).strip()]
+                    return [
+                        str(item).strip()[:_MAX_QUERY_LEN] for item in data if str(item).strip()
+                    ]
             except json.JSONDecodeError:
                 pass
 
@@ -172,7 +227,7 @@ class QueryRewriter:
 
 
 # 模块级单例：无状态，进程内复用
-_query_rewriter: Optional[QueryRewriter] = None
+_query_rewriter: QueryRewriter | None = None
 
 
 def get_query_rewriter() -> QueryRewriter:

@@ -71,6 +71,63 @@ API_KEY=your-secret-api-key
     curl -H "X-API-Key: your-secret-api-key" http://localhost:8000/api/v1/chat ...
     ```
 
+!!! tip "常量时间比较"
+    `verify_api_key` 使用 `secrets.compare_digest` 做恒定时间比较，避免攻击者通过响应时间差逐字符猜测 API Key。应用启动时若 `API_KEY` 为空会输出 WARNING 日志提醒运维人员。
+
+---
+
+## :material-shield-check: 安全配置
+
+生产化加固引入的安全相关配置项，覆盖 CORS、限流、敏感词、会话生命周期四个维度。所有配置项均可通过环境变量或 `.env` 注入，详见 `app/core/config.py` 的 `Settings` 类。
+
+### 配置项
+
+| 变量名 | 默认值 | 说明 | 影响范围 |
+|--------|--------|------|----------|
+| `ALLOWED_ORIGINS` | `""`（空） | CORS 白名单，逗号分隔多个源（如 `https://example.com,https://app.example.com`）；留空时 `DEBUG=True` 允许所有源（不允许凭据），`DEBUG=False` 拒绝所有源 | CORS 中间件 |
+| `RATE_LIMIT_ENABLED` | `True` | 是否启用全局 IP 限流；`False` 时全部接口不再做速率限制（降级放行） | 全局限流中间件 |
+| `SENSITIVE_WORDS` | `""`（空） | 运行时额外敏感词，逗号分隔；与 `app/knowledge/sensitive_words.txt` 合并生效，默认 `warn` 级 | 内容过滤器 |
+| `SESSION_TTL` | `1800` | 会话超时时间（秒），超过该时长无活动的会话将被清理，默认 30 分钟 | 会话清理 |
+| `SESSION_CLEANUP_INTERVAL` | `300` | 会话清理扫描间隔（秒），后台线程每隔该时长扫描一次过期会话，默认 5 分钟 | 会话清理 |
+
+```bash
+# CORS 白名单（生产环境必须配置前端域名）
+ALLOWED_ORIGINS=https://example.com,https://app.example.com
+
+# 限流开关（生产环境建议开启）
+RATE_LIMIT_ENABLED=True
+
+# 额外敏感词（与 sensitive_words.txt 合并生效）
+SENSITIVE_WORDS=竞品A,竞品B,内部代号
+
+# 会话超时与清理
+SESSION_TTL=1800
+SESSION_CLEANUP_INTERVAL=300
+```
+
+### 安全特性一览
+
+系统已内置以下安全机制，无需额外配置即可生效：
+
+- **API Key 常量时间比较**：`secrets.compare_digest` 防止时序攻击
+- **启动时 API_KEY 空值 WARNING**：应用启动时检测到 `API_KEY` 为空会在日志输出安全告警
+- **CORS 白名单 + 安全响应头**：白名单模式下才允许凭据；响应自动附加 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: strict-origin-when-cross-origin`，HTTPS 下追加 `Strict-Transport-Security`（HSTS）
+- **全局 IP 限流**：滑动窗口算法，默认 60 req/min/IP，超限返回 429 并带 `Retry-After` 头
+- **运行时双向敏感词过滤**：基于 AC 自动机的高效多模式匹配，分 `block`（拦截）/`warn`（整词替换为 `***`）/`mask`（保留首尾字符中间打码）三级；输入侧仅 `block` 拦截，输出侧 `warn`/`mask` 替换
+- **日志 PII 自动脱敏**：日志过滤器自动识别并打码手机号（前 3 后 4）、身份证（前 6 后 4）、邮箱（用户名首字符）、银行卡（前 4 后 4）
+- **会话超时自动清理**：后台 daemon 线程按 `SESSION_CLEANUP_INTERVAL` 周期扫描，清理超过 `SESSION_TTL` 未活动的会话
+- **文件上传限制**：类型白名单（`.md`/`.txt`/`.pdf`/`.docx`）+ 10MB 上限，超限返回 413/415
+- **运维 API 鉴权**：`/api/v1/knowledge/*`、`/api/v1/operations/*` 等运维端点强制依赖 `verify_api_key`
+
+!!! warning "CORS 白名单模式"
+    `ALLOWED_ORIGINS` 留空 + `DEBUG=False` 时，CORS 拒绝所有跨源请求，前端将无法访问。生产环境必须显式配置前端域名。
+
+!!! tip "限流降级"
+    `RATE_LIMIT_ENABLED=False` 时全局限流降级为放行，仅建议在压测或调试场景临时关闭。多进程部署需替换为 Redis 等共享存储的限流方案。
+
+??? info "敏感词文件格式"
+    `app/knowledge/sensitive_words.txt` 每行格式 `词|级别`，无 `|` 时默认 `warn` 级；`#` 开头为注释。修改后需重启服务或调用 `reset_content_filter()` 重新构建 AC 自动机。
+
 ---
 
 ## :material-robot: LLM 配置

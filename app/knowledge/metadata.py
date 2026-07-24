@@ -3,11 +3,12 @@
 为每个 chunk 补充来源/页码/章节/产品分类/版本/知识类型等元数据，
 并提供去重、术语一致性、敏感词过滤的质量校验占位接口。
 """
+
 from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -16,7 +17,7 @@ from app.schemas.knowledge import TextChunk
 logger = get_logger("app.knowledge.metadata")
 
 # 简单敏感词列表：覆盖政治/辱骂常见样例，命中后做打码处理
-DEFAULT_SENSITIVE_WORDS: List[str] = [
+DEFAULT_SENSITIVE_WORDS: list[str] = [
     "敏感词1",
     "敏感词2",
     "政治敏感",
@@ -33,18 +34,20 @@ class MetadataAnnotator:
     集中维护元数据字段与默认值，避免散落在各调用点造成不一致。
     """
 
-    def __init__(self, sensitive_words: Optional[List[str]] = None) -> None:
-        self.sensitive_words = sensitive_words if sensitive_words is not None else DEFAULT_SENSITIVE_WORDS
+    def __init__(self, sensitive_words: list[str] | None = None) -> None:
+        self.sensitive_words = (
+            sensitive_words if sensitive_words is not None else DEFAULT_SENSITIVE_WORDS
+        )
         settings = get_settings()
         self.dedup_threshold = settings.DEDUP_THRESHOLD
 
     def annotate_chunks(
         self,
-        chunks: List[TextChunk],
+        chunks: list[TextChunk],
         source: str,
         doc_hash: str,
-        overrides: Optional[Dict[str, Any]] = None,
-    ) -> List[TextChunk]:
+        overrides: dict[str, Any] | None = None,
+    ) -> list[TextChunk]:
         """为一批 chunk 标注完整元数据。
 
         overrides 允许调用方按文档级覆盖默认值（如指定 product/版本/知识类型），
@@ -86,7 +89,7 @@ class MetadataAnnotator:
 
         仅做简单字符串匹配，性能敏感场景可换 Aho-Corasick 等多模式匹配。
         """
-        hit: List[str] = []
+        hit: list[str] = []
         cleaned = text
         for word in self.sensitive_words:
             if word and word in cleaned:
@@ -95,7 +98,7 @@ class MetadataAnnotator:
         return cleaned, hit
 
 
-def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
+def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     """计算两个向量的余弦相似度。
 
     余弦相似度对向量长度不敏感，适合度量语义相似性。
@@ -111,8 +114,8 @@ def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
 
 
 def is_duplicate(
-    new_embedding: List[float],
-    existing_embeddings: List[List[float]],
+    new_embedding: list[float],
+    existing_embeddings: list[list[float]],
     threshold: float = 0.95,
 ) -> bool:
     """判断新向量是否与已存在向量重复。
@@ -128,13 +131,13 @@ def is_duplicate(
     return False
 
 
-def check_term_consistency(text: str, term_map: Optional[Dict[str, str]] = None) -> List[str]:
+def check_term_consistency(text: str, term_map: dict[str, str] | None = None) -> list[str]:
     """术语一致性检查占位：返回命中的不一致术语。
 
     term_map 形如 {"旧称": "标准称"}，本任务仅提供接口，便于后续接入术语表。
     """
     term_map = term_map or {}
-    hits: List[str] = []
+    hits: list[str] = []
     for alias, standard in term_map.items():
         if alias in text and standard not in text:
             hits.append(f"{alias} -> {standard}")
@@ -142,10 +145,10 @@ def check_term_consistency(text: str, term_map: Optional[Dict[str, str]] = None)
 
 
 def annotate_chunks(
-    chunks: List[TextChunk],
+    chunks: list[TextChunk],
     source: str,
     doc_hash: str,
-    overrides: Optional[Dict[str, Any]] = None,
-) -> List[TextChunk]:
+    overrides: dict[str, Any] | None = None,
+) -> list[TextChunk]:
     """便捷入口：使用默认敏感词列表标注一批 chunk。"""
     return MetadataAnnotator().annotate_chunks(chunks, source, doc_hash, overrides)

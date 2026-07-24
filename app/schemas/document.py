@@ -11,9 +11,8 @@
 所有模型字段与 document_store 内部存储结构对齐，
 但对外暴露精简字段，避免泄露 chunk_ids 等内部细节。
 """
-from __future__ import annotations
 
-from typing import List, Optional
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
@@ -23,9 +22,7 @@ class DocumentVersion(BaseModel):
 
     version: str = Field(..., description="版本号，如 v1 / v2")
     doc_hash: str = Field("", description="该版本内容哈希")
-    status: str = Field(
-        "active", description="版本状态：active / archived / deleted"
-    )
+    status: str = Field("active", description="版本状态：active / archived / deleted")
     chunk_count: int = Field(0, description="该版本 chunk 数量")
     created_at: str = Field("", description="版本创建时间，ISO8601 字符串")
 
@@ -50,9 +47,7 @@ class DocumentDetail(BaseModel):
     status: str = Field("active", description="文档状态")
     created_at: str = Field("", description="文档创建时间")
     updated_at: str = Field("", description="最近更新时间")
-    versions: List[DocumentVersion] = Field(
-        default_factory=list, description="全部版本历史"
-    )
+    versions: list[DocumentVersion] = Field(default_factory=list, description="全部版本历史")
 
 
 class RollbackRequest(BaseModel):
@@ -66,7 +61,7 @@ class CanaryRequest(BaseModel):
 
     doc_id: str = Field(..., description="待验证的文档 ID")
     version: str = Field(..., description="待验证的目标版本号")
-    sample_queries: List[str] = Field(
+    sample_queries: list[str] = Field(
         default_factory=list,
         description="样本查询列表；为空时使用默认数量占位查询",
     )
@@ -78,7 +73,7 @@ class DeleteResult(BaseModel):
     doc_id: str = Field(..., description="被删除的文档 ID")
     deleted_chunks: int = Field(0, description="实际从向量库移除的 chunk 数")
     success: bool = Field(True, description="是否删除成功")
-    error: Optional[str] = Field(None, description="错误信息，成功时为空")
+    error: str | None = Field(None, description="错误信息，成功时为空")
 
 
 class DocumentListResponse(BaseModel):
@@ -87,9 +82,7 @@ class DocumentListResponse(BaseModel):
     汇总当前页文档摘要与总数，便于前端分页展示。
     """
 
-    items: List[DocumentSummary] = Field(
-        default_factory=list, description="当前页文档摘要列表"
-    )
+    items: list[DocumentSummary] = Field(default_factory=list, description="当前页文档摘要列表")
     total: int = Field(0, description="已注册文档总数")
     limit: int = Field(20, description="本次查询的分页大小")
     offset: int = Field(0, description="本次查询的起始偏移")
@@ -105,4 +98,4 @@ class RollbackResult(BaseModel):
         0, description="回滚时重新入库的 chunk 数（目标版本 chunks 已删时触发）"
     )
     current_version: str = Field("", description="回滚后的当前版本号")
-    error: Optional[str] = Field(None, description="错误信息，成功时为空")
+    error: str | None = Field(None, description="错误信息，成功时为空")

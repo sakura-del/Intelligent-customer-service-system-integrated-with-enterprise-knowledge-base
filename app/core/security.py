@@ -4,7 +4,8 @@
 当 API_KEY 未配置时（开发环境）放行，便于本地调试；
 生产环境必须配置以保障安全。
 """
-from typing import Optional
+
+import secrets
 
 from fastapi import Depends, Header, HTTPException, status
 
@@ -12,7 +13,7 @@ from app.core.config import Settings, get_settings
 
 
 def verify_api_key(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
     settings: Settings = Depends(get_settings),
 ) -> str:
     """校验请求头中的 API Key。
@@ -25,8 +26,10 @@ def verify_api_key(
     if not settings.api_key_configured:
         return "dev-mode"
 
-    # 生产模式：校验请求方提供的 Key 是否匹配
-    if not x_api_key or x_api_key != settings.API_KEY:
+    # 生产模式：使用恒定时间比较防止时序攻击
+    # secrets.compare_digest 在两个字符串不一致时仍保持相近耗时，
+    # 避免攻击者通过响应时间差逐字符猜测 API Key
+    if not x_api_key or not secrets.compare_digest(x_api_key, settings.API_KEY):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="无效或缺失的 API Key，请在请求头中提供 X-API-Key",

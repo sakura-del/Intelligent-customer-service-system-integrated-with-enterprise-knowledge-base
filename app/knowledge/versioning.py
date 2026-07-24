@@ -9,10 +9,10 @@
 灰度集合初始化或查询失败时标记 canary_unavailable=True，仅返回主集合结果，
 不抛异常阻断对比流程。
 """
+
 from __future__ import annotations
 
 from threading import RLock
-from typing import List, Optional
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -91,7 +91,7 @@ class CanaryManager:
 
     def __init__(self) -> None:
         self._lock = RLock()
-        self._canary_store: Optional[VectorStore] = None
+        self._canary_store: VectorStore | None = None
 
     def _canary_collection_name(self) -> str:
         """根据主集合名与配置后缀拼接灰度集合名。"""
@@ -134,7 +134,7 @@ class CanaryManager:
         if target_ver is None:
             logger.warning("灰度入库失败，版本不存在：%s/%s", doc_id, version)
             return 0
-        texts: List[str] = list(target_ver.get("chunk_texts", []))
+        texts: list[str] = list(target_ver.get("chunk_texts", []))
         if not texts:
             logger.warning("灰度入库跳过，版本无文本快照：%s/%s", doc_id, version)
             return 0
@@ -155,9 +155,7 @@ class CanaryManager:
             logger.warning("灰度入库异常 doc_id=%s version=%s：%s", doc_id, version, exc)
             return 0
 
-    def _derive_sample_queries(
-        self, doc_id: str, target_version: str, limit: int
-    ) -> List[str]:
+    def _derive_sample_queries(self, doc_id: str, target_version: str, limit: int) -> list[str]:
         """从目标版本的 chunk 文本派生样本查询，供无显式查询时使用。"""
         store = get_document_store()
         doc = store.get_document(doc_id)
@@ -171,9 +169,9 @@ class CanaryManager:
         return [t[:64] for t in texts[:limit] if t]
 
     @staticmethod
-    def _to_hit_items(hits: List[dict], top_k: int) -> List[CanaryHitItem]:
+    def _to_hit_items(hits: list[dict], top_k: int) -> list[CanaryHitItem]:
         """将向量库原始命中转换为对外契约 CanaryHitItem，截断文本避免响应过大。"""
-        items: List[CanaryHitItem] = []
+        items: list[CanaryHitItem] = []
         for hit in hits[:top_k]:
             metadata = hit.get("metadata") or {}
             items.append(
@@ -190,8 +188,8 @@ class CanaryManager:
         doc_id: str,
         target_version: str,
         current_version: str,
-        sample_queries: Optional[List[str]] = None,
-        top_k: Optional[int] = None,
+        sample_queries: list[str] | None = None,
+        top_k: int | None = None,
     ) -> CanaryReport:
         """主集合与灰度集合的检索 A/B 对比。
 
@@ -219,7 +217,7 @@ class CanaryManager:
         main_store = get_vector_store()
 
         # 灰度集合延迟获取，失败时降级标记不可用
-        canary_store: Optional[VectorStore] = None
+        canary_store: VectorStore | None = None
         canary_unavailable = False
         try:
             canary_store = self.get_canary_store()
@@ -227,7 +225,7 @@ class CanaryManager:
             logger.warning("灰度集合不可用，降级为主集合结果：%s", exc)
             canary_unavailable = True
 
-        query_results: List[CanaryQueryResult] = []
+        query_results: list[CanaryQueryResult] = []
         diff_sum = 0.0
         for query in queries:
             query_embedding = embedding_service.embed_query(query)
@@ -238,7 +236,7 @@ class CanaryManager:
                 where={"$and": [{"doc_id": doc_id}, {"version": current_version}]},
             )
             # 灰度集合按目标版本过滤
-            canary_hits: List[dict] = []
+            canary_hits: list[dict] = []
             if canary_store is not None:
                 try:
                     canary_hits = canary_store.query(
@@ -280,7 +278,7 @@ class CanaryManager:
     @staticmethod
     def _build_compare_summary(avg_diff: float, canary_unavailable: bool) -> str:
         """生成对比结论：正值表示目标版本更优，灰度不可用时追加降级提示。"""
-        parts: List[str] = []
+        parts: list[str] = []
         if avg_diff > 0.01:
             parts.append(f"目标版本平均相似度更高 {avg_diff:.3f}，建议切换")
         elif avg_diff < -0.01:
@@ -293,7 +291,7 @@ class CanaryManager:
 
 
 # 模块级单例，避免重复创建灰度集合
-_canary_manager: Optional[CanaryManager] = None
+_canary_manager: CanaryManager | None = None
 
 
 def get_canary_manager() -> CanaryManager:

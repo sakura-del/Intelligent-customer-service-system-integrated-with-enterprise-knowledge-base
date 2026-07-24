@@ -10,11 +10,11 @@
 任一环节失败不影响其他环节与主入库流程，错误信息记录到报告的 error 字段。
 术语表与敏感词文件默认为空，保证开箱即用。
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -30,24 +30,24 @@ _TERM_DICT_PATH = Path(__file__).parent / "term_dict.json"
 _SENSITIVE_WORDS_PATH = Path(__file__).parent / "sensitive_words.txt"
 
 # 内置默认术语表：覆盖繁简等常见异写，保证开箱即用的基础检测能力
-_DEFAULT_TERM_DICT: Dict[str, List[str]] = {
+_DEFAULT_TERM_DICT: dict[str, list[str]] = {
     "客服": ["客務"],
 }
 
 # 内置默认敏感词：覆盖常见样例，便于默认配置下即可验证流程
-_DEFAULT_SENSITIVE_WORDS: List[str] = [
+_DEFAULT_SENSITIVE_WORDS: list[str] = [
     "违禁词样例",
 ]
 
 
-def _load_term_dict() -> Dict[str, List[str]]:
+def _load_term_dict() -> dict[str, list[str]]:
     """加载术语表，结构为 {canonical: [alias1, alias2, ...]}。
 
     合并内置默认术语表与文件术语表，文件别名追加到默认别名后（去重）。
     读取失败或格式异常时降级为默认术语表，保证开箱即用的基础检测能力。
     """
     # 以内置默认术语表为基础，保证开箱即用
-    merged: Dict[str, List[str]] = {
+    merged: dict[str, list[str]] = {
         canonical: list(aliases) for canonical, aliases in _DEFAULT_TERM_DICT.items()
     }
     try:
@@ -67,22 +67,28 @@ def _load_term_dict() -> Dict[str, List[str]]:
     return merged
 
 
-def _load_sensitive_words() -> List[str]:
+def _load_sensitive_words() -> list[str]:
     """加载敏感词列表，合并默认敏感词、文件敏感词与 settings.SENSITIVE_WORDS 配置。
 
     - 默认敏感词：内置常见样例，保证开箱即用的基础检测能力
     - 文件敏感词：每行一个词，空行与注释行（# 开头）忽略
+      兼容 `词|级别` 格式（运行时过滤器使用分级，入库检查仅取词本身）
     - settings.SENSITIVE_WORDS：逗号分隔字符串，便于运行时动态配置
     去重后返回，避免重复检测。
     """
     # 以内置默认敏感词为基础，保证开箱即用
-    words: List[str] = list(_DEFAULT_SENSITIVE_WORDS)
+    words: list[str] = list(_DEFAULT_SENSITIVE_WORDS)
     try:
         if _SENSITIVE_WORDS_PATH.exists():
             lines = _SENSITIVE_WORDS_PATH.read_text(encoding="utf-8").splitlines()
             for line in lines:
                 word = line.strip()
-                if word and not word.startswith("#") and word not in words:
+                if not word or word.startswith("#"):
+                    continue
+                # 兼容 `词|级别` 格式：入库检查不分级，仅取词本身
+                if "|" in word:
+                    word = word.split("|", 1)[0].strip()
+                if word and word not in words:
                     words.append(word)
     except Exception as exc:
         logger.warning("敏感词文件加载失败，仅使用默认与配置敏感词：%s", exc)
@@ -101,9 +107,9 @@ def _load_sensitive_words() -> List[str]:
 
 
 def check_duplicates(
-    chunks: List[TextChunk],
-    existing_embeddings: List[List[float]],
-) -> List[QualityIssue]:
+    chunks: list[TextChunk],
+    existing_embeddings: list[list[float]],
+) -> list[QualityIssue]:
     """基于 cosine 相似度检测重复片段。
 
     将 chunks 向量化后与 existing_embeddings 逐一比对，
@@ -113,7 +119,7 @@ def check_duplicates(
     if not chunks or not existing_embeddings:
         return []
 
-    issues: List[QualityIssue] = []
+    issues: list[QualityIssue] = []
     settings = get_settings()
     threshold = settings.QUALITY_DEDUP_THRESHOLD
     try:
@@ -140,9 +146,9 @@ def check_duplicates(
 
 
 def check_internal_duplicates(
-    chunks: List[TextChunk],
-    embeddings: List[List[float]],
-) -> List[QualityIssue]:
+    chunks: list[TextChunk],
+    embeddings: list[list[float]],
+) -> list[QualityIssue]:
     """库内已有 chunks 两两重复检测。
 
     将 chunks 向量化后与提供的 embeddings 逐一比对（跳过自身索引），
@@ -152,7 +158,7 @@ def check_internal_duplicates(
     if not chunks or not embeddings or len(chunks) != len(embeddings):
         return []
 
-    issues: List[QualityIssue] = []
+    issues: list[QualityIssue] = []
     settings = get_settings()
     threshold = settings.QUALITY_DEDUP_THRESHOLD
     try:
@@ -181,7 +187,7 @@ def check_internal_duplicates(
     return issues
 
 
-def check_term_consistency(chunks: List[TextChunk]) -> List[QualityIssue]:
+def check_term_consistency(chunks: list[TextChunk]) -> list[QualityIssue]:
     """术语一致性检查。
 
     对照术语表（{canonical: [aliases]}），检测 chunk 中使用了非标准别名的情况，
@@ -191,7 +197,7 @@ def check_term_consistency(chunks: List[TextChunk]) -> List[QualityIssue]:
     if not term_dict or not chunks:
         return []
 
-    issues: List[QualityIssue] = []
+    issues: list[QualityIssue] = []
     for index, chunk in enumerate(chunks):
         text = chunk.text
         for canonical, aliases in term_dict.items():
@@ -209,7 +215,7 @@ def check_term_consistency(chunks: List[TextChunk]) -> List[QualityIssue]:
     return issues
 
 
-def check_sensitive_words(chunks: List[TextChunk]) -> List[QualityIssue]:
+def check_sensitive_words(chunks: list[TextChunk]) -> list[QualityIssue]:
     """敏感词检查。
 
     从 sensitive_words.txt 加载敏感词列表，检测 chunk 中命中的敏感词。
@@ -219,7 +225,7 @@ def check_sensitive_words(chunks: List[TextChunk]) -> List[QualityIssue]:
     if not sensitive_words or not chunks:
         return []
 
-    issues: List[QualityIssue] = []
+    issues: list[QualityIssue] = []
     for index, chunk in enumerate(chunks):
         text = chunk.text
         hit_words = [word for word in sensitive_words if word and word in text]
@@ -236,8 +242,8 @@ def check_sensitive_words(chunks: List[TextChunk]) -> List[QualityIssue]:
 
 
 def run_quality_check(
-    chunks: List[TextChunk],
-    existing_embeddings: Optional[List[List[float]]] = None,
+    chunks: list[TextChunk],
+    existing_embeddings: list[list[float]] | None = None,
 ) -> QualityReport:
     """聚合三项质量检查，返回 QualityReport。
 
@@ -248,10 +254,10 @@ def run_quality_check(
         return QualityReport(total_chunks=0, summary="无 chunk 需要检查")
 
     total = len(chunks)
-    duplicate_issues: List[QualityIssue] = []
-    term_issues: List[QualityIssue] = []
-    sensitive_issues: List[QualityIssue] = []
-    error: Optional[str] = None
+    duplicate_issues: list[QualityIssue] = []
+    term_issues: list[QualityIssue] = []
+    sensitive_issues: list[QualityIssue] = []
+    error: str | None = None
 
     # 重复检测：existing_embeddings 为 None 时跳过
     if existing_embeddings is not None:
@@ -296,8 +302,8 @@ def run_quality_check(
 
 
 def run_quality_check_on_existing(
-    chunks: List[TextChunk],
-    embeddings: List[List[float]],
+    chunks: list[TextChunk],
+    embeddings: list[list[float]],
 ) -> QualityReport:
     """对已入库内容执行质量巡检。
 
@@ -308,10 +314,10 @@ def run_quality_check_on_existing(
         return QualityReport(total_chunks=0, summary="无已入库内容可巡检")
 
     total = len(chunks)
-    duplicate_issues: List[QualityIssue] = []
-    term_issues: List[QualityIssue] = []
-    sensitive_issues: List[QualityIssue] = []
-    error: Optional[str] = None
+    duplicate_issues: list[QualityIssue] = []
+    term_issues: list[QualityIssue] = []
+    sensitive_issues: list[QualityIssue] = []
+    error: str | None = None
 
     # 库内两两重复检测：将 chunks 向量化后与已有 embeddings 比对
     try:

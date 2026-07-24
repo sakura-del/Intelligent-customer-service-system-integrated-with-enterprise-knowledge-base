@@ -6,10 +6,10 @@
 
 LLM 不可用时（mock 模式）降级到规则拼装，保证输出仍符合话术规范。
 """
+
 from __future__ import annotations
 
 import re
-from typing import List, Optional
 
 from app.agents.llm_client import LLMClient, get_llm_client
 from app.core.logging import get_logger
@@ -22,11 +22,11 @@ SYSTEM_PROMPT = (
     "你是一名亲切专业的电商客服代表。请把提供的原始答案润色为"
     "友好、人性化的客服回复。\n"
     "【话术规范】\n"
-    "1. 开头必须使用亲切称呼，如\"您好~\"、\"亲~\"。\n"
-    "2. 结尾必须添加引导语，如\"还有什么可以帮您的吗？\"。\n"
+    '1. 开头必须使用亲切称呼，如"您好~"、"亲~"。\n'
+    '2. 结尾必须添加引导语，如"还有什么可以帮您的吗？"。\n'
     "3. 重要信息分段展示，用换行分隔不同要点。\n"
-    "4. 严禁使用过时话术：\"亲，这边建议您\"、"
-    "\"亲，给您带来的不便深表歉意\"、\"这边为您\"、\"您反馈的问题\"等。\n"
+    '4. 严禁使用过时话术："亲，这边建议您"、'
+    '"亲，给您带来的不便深表歉意"、"这边为您"、"您反馈的问题"等。\n'
     "5. 避免机械重复和生硬的事实陈述，保持自然对话感。\n"
     "6. 主动提供相关信息，减少用户追问。\n"
     "【风格要求】\n"
@@ -39,7 +39,7 @@ SYSTEM_PROMPT = (
 # === 话术规范默认配置（可在实例化时覆盖以适配不同业务场景）===
 
 # 禁用话术：过时或机械的表达，出现即视为不合规
-DEFAULT_FORBIDDEN_PHRASES: List[str] = [
+DEFAULT_FORBIDDEN_PHRASES: list[str] = [
     "亲，这边建议您",
     "亲，给您带来的不便深表歉意",
     "这边建议您",
@@ -49,7 +49,7 @@ DEFAULT_FORBIDDEN_PHRASES: List[str] = [
 ]
 
 # 合规开头称呼：回复必须以其中之一开头
-DEFAULT_OPENING_GREETINGS: List[str] = [
+DEFAULT_OPENING_GREETINGS: list[str] = [
     "您好~",
     "亲~",
     "您好！",
@@ -57,7 +57,7 @@ DEFAULT_OPENING_GREETINGS: List[str] = [
 ]
 
 # 合规结尾引导：回复必须包含其中之一
-DEFAULT_CLOSING_PHRASES: List[str] = [
+DEFAULT_CLOSING_PHRASES: list[str] = [
     "还有什么可以帮您的吗？",
     "如有其他问题随时告诉我哦~",
     "还有其他需要了解的吗？",
@@ -80,10 +80,10 @@ class DialogAgent:
 
     def __init__(
         self,
-        llm_client: Optional[LLMClient] = None,
-        forbidden_phrases: Optional[List[str]] = None,
-        opening_greetings: Optional[List[str]] = None,
-        closing_phrases: Optional[List[str]] = None,
+        llm_client: LLMClient | None = None,
+        forbidden_phrases: list[str] | None = None,
+        opening_greetings: list[str] | None = None,
+        closing_phrases: list[str] | None = None,
     ) -> None:
         # 延迟取单例，便于测试注入自定义实现
         self._llm_client = llm_client
@@ -99,9 +99,7 @@ class DialogAgent:
             else list(DEFAULT_OPENING_GREETINGS)
         )
         self.closing_phrases = (
-            list(closing_phrases)
-            if closing_phrases is not None
-            else list(DEFAULT_CLOSING_PHRASES)
+            list(closing_phrases) if closing_phrases is not None else list(DEFAULT_CLOSING_PHRASES)
         )
 
     @property
@@ -138,7 +136,7 @@ class DialogAgent:
     def generate(
         self,
         raw_answer: str,
-        sources: List[str],
+        sources: list[str],
         context: DialogContext,
     ) -> DialogResult:
         """完整生成：润色 + 来源标注 + 引导语 + 话术校验。
@@ -228,15 +226,13 @@ class DialogAgent:
 
     # ==================== 规则拼装（mock 兜底）====================
 
-    def _rule_based_polish(
-        self, raw_answer: str, context: DialogContext
-    ) -> str:
+    def _rule_based_polish(self, raw_answer: str, context: DialogContext) -> str:
         """规则拼装：mock 模式下基于规则生成符合话术规范的回复。
 
         结构：开头称呼 + 上下文过渡 + 分段主体 + 结尾引导，
         保证输出始终通过 validate_tone 校验。
         """
-        parts: List[str] = [self.opening_greetings[0]]
+        parts: list[str] = [self.opening_greetings[0]]
 
         # 上下文衔接：有历史对话时加过渡语保持连贯
         transition = self._build_transition(context)
@@ -297,7 +293,7 @@ class DialogAgent:
         text = re.sub(r"\n +", "\n", text)
         return text.strip()
 
-    def _annotate_sources(self, reply: str, sources: List[str]) -> str:
+    def _annotate_sources(self, reply: str, sources: list[str]) -> str:
         """在回复末尾追加参考来源区块。
 
         来源放在结尾引导之后，作为独立区块展示，
@@ -308,13 +304,13 @@ class DialogAgent:
         source_lines = "\n".join(f"- {s}" for s in sources)
         return f"{reply}\n\n参考来源：\n{source_lines}"
 
-    def _build_suggestions(self, context: DialogContext) -> List[str]:
+    def _build_suggestions(self, context: DialogContext) -> list[str]:
         """生成引导追问建议，减少用户二次提问。
 
         基于来源与原始答案关键词生成通用建议，
         主动提供相关信息入口。
         """
-        suggestions: List[str] = []
+        suggestions: list[str] = []
         if context.sources:
             suggestions.append(f"如需查看完整说明，可参考：{context.sources[0]}")
         suggestions.append("如果您需要更详细的操作步骤，请随时告诉我~")
@@ -326,7 +322,7 @@ class DialogAgent:
         优先使用分层摘要（Task 14）：ContextManager 预先生成的精炼文本，
         可显著降低 token 消耗；未提供时回退到取最近若干轮原始历史。
         """
-        parts: List[str] = []
+        parts: list[str] = []
         # 分层摘要优先：减少 token、保留关键信息
         if context.layered_summary:
             parts.append(context.layered_summary)
@@ -334,8 +330,7 @@ class DialogAgent:
             # 只取最近 MAX_HISTORY_TURNS 轮，控制 token 成本
             recent = context.history[-MAX_HISTORY_TURNS:]
             history_text = " | ".join(
-                f"{turn.get('role', '?')}: "
-                f"{str(turn.get('content', ''))[:MAX_HISTORY_CHARS]}"
+                f"{turn.get('role', '?')}: {str(turn.get('content', ''))[:MAX_HISTORY_CHARS]}"
                 for turn in recent
             )
             parts.append(f"最近对话：{history_text}")
@@ -352,24 +347,18 @@ class DialogAgent:
         移除后由 generate 统一标注，避免重复。
         """
         lines = text.split("\n")
-        cleaned = [
-            line
-            for line in lines
-            if not line.strip().startswith("来源：")
-        ]
+        cleaned = [line for line in lines if not line.strip().startswith("来源：")]
         return "\n".join(cleaned).strip()
 
     def _build_empty_reply(self) -> str:
         """空答案的合规兜底回复。"""
         return (
-            f"{self.opening_greetings[0]}\n"
-            "抱歉，暂时没有找到相关信息呢~\n"
-            f"{self.closing_phrases[0]}"
+            f"{self.opening_greetings[0]}\n抱歉，暂时没有找到相关信息呢~\n{self.closing_phrases[0]}"
         )
 
 
 # 模块级单例：Agent 编排无状态，进程内复用
-_dialog_agent: Optional[DialogAgent] = None
+_dialog_agent: DialogAgent | None = None
 
 
 def get_dialog_agent() -> DialogAgent:

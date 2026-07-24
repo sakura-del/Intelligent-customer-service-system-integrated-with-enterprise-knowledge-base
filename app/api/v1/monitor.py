@@ -12,7 +12,8 @@
 - 全部只读，不修改 Monitor 内部状态
 - 返回结构扁平化，便于前端直接渲染
 """
-from typing import Any, Dict, List
+
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/api/v1/monitor", tags=["监控"])
 
 
 @router.get("/overview")
-def overview() -> Dict[str, Any]:
+def overview() -> dict[str, Any]:
     """返回系统概览统计。
 
     用于监控面板顶部展示：总 trace 数、成功率、平均耗时、活跃会话数。
@@ -32,10 +33,8 @@ def overview() -> Dict[str, Any]:
 
 @router.get("/traces")
 def list_traces(
-    limit: int = Query(
-        50, ge=1, le=200, description="返回的最多 trace 条数"
-    ),
-) -> List[Dict[str, Any]]:
+    limit: int = Query(50, ge=1, le=200, description="返回的最多 trace 条数"),
+) -> list[dict[str, Any]]:
     """返回最近 trace 列表（摘要，不含 steps 详情）。
 
     按时间倒序返回（最新在前）。点击单条 trace 后通过
@@ -45,7 +44,7 @@ def list_traces(
 
 
 @router.get("/traces/{trace_id}")
-def get_trace(trace_id: str) -> Dict[str, Any]:
+def get_trace(trace_id: str) -> dict[str, Any]:
     """返回单条 trace 详情（含 steps 与 sub_tasks）。
 
     trace_id 不存在时返回 404。
@@ -60,7 +59,7 @@ def get_trace(trace_id: str) -> Dict[str, Any]:
 
 
 @router.get("/agents")
-def agent_stats() -> List[Dict[str, Any]]:
+def agent_stats() -> list[dict[str, Any]]:
     """返回各 Agent 当前状态。
 
     包含已注册但未调用的 agent（调用次数为 0），
@@ -70,7 +69,7 @@ def agent_stats() -> List[Dict[str, Any]]:
 
 
 @router.get("/sessions")
-def active_sessions() -> List[Dict[str, Any]]:
+def active_sessions() -> list[dict[str, Any]]:
     """返回活跃会话列表。
 
     按最后活跃时间倒序返回，便于面板关注最近活跃的会话。

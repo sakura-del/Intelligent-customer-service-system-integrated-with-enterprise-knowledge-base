@@ -17,11 +17,12 @@
 - 卡片生成复用 SessionManager 与 TicketStore 数据，避免重复查询
 - 单例模式与项目其他 Agent 风格保持一致
 """
+
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -80,11 +81,11 @@ class EscalationEngine:
         self,
         query: str,
         session_id: str,
-        emotion_result: Optional[EmotionResult] = None,
-        intent_result: Optional[IntentResult] = None,
-        session_state: Optional[Dict[str, Any]] = None,
+        emotion_result: EmotionResult | None = None,
+        intent_result: IntentResult | None = None,
+        session_state: dict[str, Any] | None = None,
         respect_working_hours: bool = True,
-        now: Optional[datetime] = None,
+        now: datetime | None = None,
     ) -> EscalationDecision:
         """按优先级检查转接规则，返回首个命中规则的决策。
 
@@ -155,7 +156,7 @@ class EscalationEngine:
     # 各规则检查：返回 None 表示未命中，返回 EscalationDecision 表示命中
     # ------------------------------------------------------------------
     @staticmethod
-    def _check_user_request(query: str) -> Optional[EscalationDecision]:
+    def _check_user_request(query: str) -> EscalationDecision | None:
         """规则 1：用户主动要求转人工。
 
         关键词命中即转接，优先级最高，不因非工作时间被阻断
@@ -174,8 +175,8 @@ class EscalationEngine:
 
     @staticmethod
     def _check_emotion(
-        emotion_result: Optional[EmotionResult],
-    ) -> Optional[EscalationDecision]:
+        emotion_result: EmotionResult | None,
+    ) -> EscalationDecision | None:
         """规则 2：愤怒情绪超过阈值即转接。
 
         仅愤怒情绪触发，其他情绪由上游情绪处理流程应对，
@@ -196,9 +197,7 @@ class EscalationEngine:
         return None
 
     @staticmethod
-    def _check_failures(
-        failed_attempts: int, turn_count: int
-    ) -> Optional[EscalationDecision]:
+    def _check_failures(failed_attempts: int, turn_count: int) -> EscalationDecision | None:
         """规则 3：连续失败或智能客服 3 轮未解决。
 
         触发任一条件即转接：
@@ -223,8 +222,8 @@ class EscalationEngine:
 
     @staticmethod
     def _check_complex_problem(
-        intent_result: Optional[IntentResult],
-    ) -> Optional[EscalationDecision]:
+        intent_result: IntentResult | None,
+    ) -> EscalationDecision | None:
         """规则 4：跨 3 个以上业务域即转接。
 
         用 sub_tasks 涉及的 agent_name 数判断业务域跨度，
@@ -233,9 +232,7 @@ class EscalationEngine:
         if intent_result is None or not intent_result.sub_tasks:
             return None
         # 不同 agent_name 数量反映业务域跨度
-        agent_names = {
-            task.agent_name for task in intent_result.sub_tasks if task.agent_name
-        }
+        agent_names = {task.agent_name for task in intent_result.sub_tasks if task.agent_name}
         if len(agent_names) >= COMPLEX_AGENT_COUNT_THRESHOLD:
             return EscalationDecision(
                 should_escalate=True,
@@ -246,7 +243,7 @@ class EscalationEngine:
         return None
 
     @staticmethod
-    def _check_vip(session: Dict[str, Any]) -> Optional[EscalationDecision]:
+    def _check_vip(session: dict[str, Any]) -> EscalationDecision | None:
         """规则 5：VIP 用户优先转接。
 
         仅在用户明确为 VIP 等级时触发，优先级低，
@@ -266,7 +263,7 @@ class EscalationEngine:
     # 工作时间判断
     # ------------------------------------------------------------------
     @staticmethod
-    def _is_within_working_hours(now: Optional[datetime] = None) -> bool:
+    def _is_within_working_hours(now: datetime | None = None) -> bool:
         """判断当前是否在人工服务时间段内。
 
         使用 Settings 配置的时区与起止小时，
@@ -310,7 +307,7 @@ class EscalationEngine:
         任一查询失败时降级为空值，保证卡片总能生成。
         """
         session = self._session_manager.get_session(session_id) or {}
-        history: List[Dict[str, Any]] = session.get("history", []) or []
+        history: list[dict[str, Any]] = session.get("history", []) or []
 
         # 对话摘要：取最近 user 消息 + assistant 回复拼接，截断避免过长
         summary = self._build_summary(history)
@@ -332,7 +329,7 @@ class EscalationEngine:
         )
 
     @staticmethod
-    def _build_summary(history: List[Dict[str, Any]]) -> str:
+    def _build_summary(history: list[dict[str, Any]]) -> str:
         """从对话历史拼装摘要。
 
         取最近若干轮的 user/assistant 内容拼接，
@@ -342,7 +339,7 @@ class EscalationEngine:
             return ""
         # 取最近 4 条记录做摘要，避免过长
         recent = history[-4:]
-        parts: List[str] = []
+        parts: list[str] = []
         for item in recent:
             role = item.get("role", "")
             content = str(item.get("content", ""))[:80]
@@ -354,9 +351,7 @@ class EscalationEngine:
         return summary[:SUMMARY_MAX_CHARS]
 
     @staticmethod
-    def _extract_attempted_solutions(
-        history: List[Dict[str, Any]]
-    ) -> List[str]:
+    def _extract_attempted_solutions(history: list[dict[str, Any]]) -> list[str]:
         """从历史中提取智能客服已给出的回复作为已尝试方案。
 
         仅取 assistant 角色内容，倒序保留最近若干条，
@@ -364,7 +359,7 @@ class EscalationEngine:
         """
         if not history:
             return []
-        solutions: List[str] = []
+        solutions: list[str] = []
         # 倒序遍历，优先保留最近的方案
         for item in reversed(history):
             if item.get("role") != "assistant":
@@ -378,7 +373,7 @@ class EscalationEngine:
         return solutions
 
     @staticmethod
-    def _count_user_tickets(user_id: Optional[str]) -> int:
+    def _count_user_tickets(user_id: str | None) -> int:
         """统计用户历史工单数。
 
         复用 TicketStore 单例避免重复实例化，
@@ -396,7 +391,7 @@ class EscalationEngine:
 
 
 # 模块级单例：规则引擎无状态，进程内复用
-_escalation_engine: Optional[EscalationEngine] = None
+_escalation_engine: EscalationEngine | None = None
 
 
 def get_escalation_engine() -> EscalationEngine:

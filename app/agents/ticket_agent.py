@@ -10,11 +10,12 @@
 - Agent 自身无状态，所有工单数据落在 TicketStore，
  便于多实例部署与持久化扩展。
 """
+
 from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.agents.llm_client import LLMClient, get_llm_client
 from app.agents.ticket_store import TicketStore, get_ticket_store
@@ -55,7 +56,7 @@ MAX_DESCRIPTION_LENGTH = 500
 
 # === 规则兜底的关键词表 ===
 # 分类关键词：按命中优先级排序，靠前的优先匹配
-CATEGORY_KEYWORDS: List[tuple] = [
+CATEGORY_KEYWORDS: list[tuple] = [
     (TicketCategory.complaint, ["投诉", "态度差", "服务差", "差评", "不满"]),
     (TicketCategory.after_sale, ["退货", "退款", "换货", "维修", "售后", "保修"]),
     (TicketCategory.logistics, ["发货", "配送", "快递", "物流", "送达", "运费"]),
@@ -65,8 +66,19 @@ CATEGORY_KEYWORDS: List[tuple] = [
 
 # 优先级关键词：从高到低匹配，命中即定级
 URGENT_KEYWORDS = [
-    "气死", "愤怒", "太差了", "无语", "立刻", "马上",
-    "投诉", "VIP", "扣款", "扣了钱", "钱没了", "骗钱", "资金损失",
+    "气死",
+    "愤怒",
+    "太差了",
+    "无语",
+    "立刻",
+    "马上",
+    "投诉",
+    "VIP",
+    "扣款",
+    "扣了钱",
+    "钱没了",
+    "骗钱",
+    "资金损失",
 ]
 HIGH_KEYWORDS = ["无法使用", "不能用", "用不了", "影响使用", "出错", "错误", "故障"]
 LOW_KEYWORDS = ["建议", "反馈", "期望", "希望", "能不能", "优化"]
@@ -76,9 +88,7 @@ ORDER_PATTERN = re.compile(r"(?:订单号|订单|单号)\s*[:：]?\s*([A-Za-z0-9
 # 手机号正则：11 位数字，宽松匹配避免漏召回
 PHONE_PATTERN = re.compile(r"(?:手机|电话|联系)\s*[:：]?\s*(1[3-9]\d{9})")
 # 邮箱正则：常见邮箱格式
-EMAIL_PATTERN = re.compile(
-    r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
-)
+EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
 
 class TicketAgent:
@@ -93,8 +103,8 @@ class TicketAgent:
 
     def __init__(
         self,
-        llm_client: Optional[LLMClient] = None,
-        ticket_store: Optional[TicketStore] = None,
+        llm_client: LLMClient | None = None,
+        ticket_store: TicketStore | None = None,
     ) -> None:
         # 延迟取单例，便于测试注入自定义实现
         self._llm_client = llm_client
@@ -119,7 +129,7 @@ class TicketAgent:
     def create_ticket_from_message(
         self,
         message: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> TicketResult:
         """从用户消息提取信息并创建工单。
 
@@ -167,7 +177,7 @@ class TicketAgent:
             status=ticket.status,
         )
 
-    def query_ticket(self, ticket_id: str) -> Optional[Ticket]:
+    def query_ticket(self, ticket_id: str) -> Ticket | None:
         """查询工单进度，返回 Ticket 或 None。
 
         由调用方决定如何把状态呈现给用户，
@@ -175,15 +185,13 @@ class TicketAgent:
         """
         return self.ticket_store.get_ticket(ticket_id)
 
-    def update_ticket_status(
-        self, ticket_id: str, status: TicketStatus
-    ) -> Optional[Ticket]:
+    def update_ticket_status(self, ticket_id: str, status: TicketStatus) -> Ticket | None:
         """更新工单状态，返回更新后的 Ticket 或 None。"""
         return self.ticket_store.update_status(ticket_id, status)
 
     # ==================== 信息提取（LLM + 规则兜底）====================
 
-    def _extract_info(self, message: str) -> Dict[str, Any]:
+    def _extract_info(self, message: str) -> dict[str, Any]:
         """提取工单信息：LLM 优先，失败时降级规则。
 
         LLM 模式下解析 JSON 失败、字段非法或为空时，
@@ -196,7 +204,7 @@ class TicketAgent:
             logger.warning("LLM 提取失败或结果非法，降级到规则提取")
         return self._rule_extract(message)
 
-    def _llm_extract(self, message: str) -> Optional[Dict[str, Any]]:
+    def _llm_extract(self, message: str) -> dict[str, Any] | None:
         """调用 LLM 提取结构化信息并解析 JSON。
 
         返回 None 表示提取失败需降级；返回 dict 表示成功。
@@ -227,7 +235,7 @@ class TicketAgent:
         return parsed
 
     @staticmethod
-    def _parse_llm_json(raw: str) -> Optional[Dict[str, Any]]:
+    def _parse_llm_json(raw: str) -> dict[str, Any] | None:
         """解析 LLM 返回的 JSON，兼容 markdown 代码块包裹。
 
         LLM 偶尔会在 JSON 外加 ```json ``` 标记，
@@ -252,7 +260,7 @@ class TicketAgent:
         return data
 
     @staticmethod
-    def _validate_extracted(info: Dict[str, Any]) -> bool:
+    def _validate_extracted(info: dict[str, Any]) -> bool:
         """校验提取结果：必要字段存在且枚举值合法。"""
         if not info.get("title") or not info.get("description"):
             return False
@@ -263,9 +271,7 @@ class TicketAgent:
             return False
         return True
 
-    def _fill_missing_fields(
-        self, info: Dict[str, Any], message: str
-    ) -> Dict[str, Any]:
+    def _fill_missing_fields(self, info: dict[str, Any], message: str) -> dict[str, Any]:
         """对缺失或非法的字段用规则补齐，保证最终结果可用。
 
         即便 LLM 返回了主要字段，contact / related_order 等
@@ -273,13 +279,9 @@ class TicketAgent:
         category / priority 统一归一为枚举实例，避免下游处理裸字符串。
         """
         # 分类：缺失或非法时用规则判定
-        info["category"] = self._normalize_category(
-            info.get("category"), message
-        )
+        info["category"] = self._normalize_category(info.get("category"), message)
         # 优先级：缺失或非法时用规则判定
-        info["priority"] = self._normalize_priority(
-            info.get("priority"), message
-        )
+        info["priority"] = self._normalize_priority(info.get("priority"), message)
         # 附加字段缺失时尝试正则提取
         if not info.get("related_order"):
             info["related_order"] = self._extract_order(message)
@@ -291,9 +293,7 @@ class TicketAgent:
         return info
 
     @staticmethod
-    def _normalize_category(
-        value: Any, message: str
-    ) -> TicketCategory:
+    def _normalize_category(value: Any, message: str) -> TicketCategory:
         """把 LLM 返回的分类值归一为枚举，非法时回退规则分类。"""
         if isinstance(value, TicketCategory):
             return value
@@ -305,9 +305,7 @@ class TicketAgent:
         return TicketAgent._rule_classify(message)
 
     @staticmethod
-    def _normalize_priority(
-        value: Any, message: str
-    ) -> TicketPriority:
+    def _normalize_priority(value: Any, message: str) -> TicketPriority:
         """把 LLM 返回的优先级值归一为枚举，非法时回退规则定级。"""
         if isinstance(value, TicketPriority):
             return value
@@ -318,7 +316,7 @@ class TicketAgent:
                 logger.warning("LLM 返回非法 priority=%r，回退规则定级", value)
         return TicketAgent._rule_judge_priority(message)
 
-    def _rule_extract(self, message: str) -> Dict[str, Any]:
+    def _rule_extract(self, message: str) -> dict[str, Any]:
         """规则提取：基于关键词与正则生成工单信息。
 
         作为 LLM 不可用时的兜底方案，覆盖常见客服场景。
@@ -373,13 +371,13 @@ class TicketAgent:
         return TicketPriority.medium
 
     @staticmethod
-    def _extract_order(message: str) -> Optional[str]:
+    def _extract_order(message: str) -> str | None:
         """正则提取订单号，未匹配返回 None。"""
         match = ORDER_PATTERN.search(message)
         return match.group(1) if match else None
 
     @staticmethod
-    def _extract_contact(message: str) -> Optional[str]:
+    def _extract_contact(message: str) -> str | None:
         """正则提取联系方式（手机号优先，其次邮箱）。"""
         phone_match = PHONE_PATTERN.search(message)
         if phone_match:
@@ -430,7 +428,7 @@ class TicketAgent:
 
 
 # 模块级单例：Agent 编排无状态，进程内复用
-_ticket_agent: Optional[TicketAgent] = None
+_ticket_agent: TicketAgent | None = None
 
 
 def get_ticket_agent() -> TicketAgent:

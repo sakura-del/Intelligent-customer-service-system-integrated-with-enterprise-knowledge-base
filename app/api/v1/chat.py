@@ -7,10 +7,12 @@
 两套端点共用 SessionManager 与 OrchestratorAgent，
 仅最终生成阶段是否流式有所差异，保持多 Agent 协同逻辑一致。
 """
+
 import json
 import re
 import time
-from typing import Any, Dict, Generator, List
+from collections.abc import Generator
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -22,6 +24,7 @@ from app.agents.orchestrator import (
     ESCALATE_REPLY,
     get_orchestrator,
 )
+from app.core.content_filter import get_content_filter
 from app.core.langfuse_client import finish_langfuse_trace, start_langfuse_trace
 from app.core.logging import get_logger
 from app.core.monitor import get_monitor
@@ -109,12 +112,10 @@ def _stream_generator(request: ChatRequest) -> Generator[bytes, None, None]:
     start_time = time.perf_counter()
     # 启动 trace 仅用于挂载 stream_first_token 步骤，trace_id 不能为空
     # 否则 record_step 会静默跳过，导致 metrics 聚合无数据
-    trace_id = monitor.start_trace(
-        session_id=request.session_id or "", message=request.message
-    )
+    trace_id = monitor.start_trace(session_id=request.session_id or "", message=request.message)
     # Task 4：Langfuse trace 由 _run_stream_pipeline 在缓存未命中时写入 holder
     # 缓存命中无 LLM 调用不会创建，holder 透传 trace_id 供 metadata 关联
-    langfuse_holder: Dict[str, Any] = {"monitor_trace_id": trace_id}
+    langfuse_holder: dict[str, Any] = {"monitor_trace_id": trace_id}
     first_event_yielded = False
     try:
         for event in _run_stream_pipeline(request, langfuse_holder):
@@ -145,7 +146,7 @@ def _stream_generator(request: ChatRequest) -> Generator[bytes, None, None]:
 
 
 def _run_stream_pipeline(
-    request: ChatRequest, langfuse_holder: Dict[str, Any] = None
+    request: ChatRequest, langfuse_holder: dict[str, Any] = None
 ) -> Generator[bytes, None, None]:
     """执行流式编排主流程：会话 → 意图识别 → 路由 → 流式生成。
 
@@ -171,6 +172,27 @@ def _run_stream_pipeline(
 
     message = request.message
 
+    # 1.1 内容安全：用户输入过滤 —— block 级命中直接拦截，不进入 LLM 链路
+    # 降级模式（ContentFilter 未启用）check_input 直接返回通过，不影响主链路
+    content_filter = get_content_filter()
+    passed, reject_reason, hit_words = content_filter.check_input(message)
+    if not passed:
+        logger.warning(
+            "用户输入命中 block 级敏感词，拦截：session=%s hits=%s",
+            session_id,
+            hit_words,
+        )
+        session_manager.append_history(session_id, "assistant", reject_reason)
+        yield _format_sse(
+            "meta",
+            {"intent": "blocked", "sources": [], "escalate": False},
+        )
+        yield _format_sse(
+            "done",
+            {"turn_count": turn_count, "escalate": False, "answer": reject_reason},
+        )
+        return
+
     # 1.5 HotQueryCache 检查：命中直接 yield meta + 切片 token + done
     # 与 graph.py 同步端点共用缓存，重复查询首 Token <100ms
     # 失败不阻断主链路，正常走编排
@@ -188,13 +210,14 @@ def _run_stream_pipeline(
             )
             # 切片流式吐出，让前端感受打字效果（首 Token <100ms）
             for piece in _slice_reply_to_token_pieces(cached.answer):
-                yield _format_sse("token", {"content": piece})
+                # 输出过滤：替换 warn/mask 级敏感词
+                yield _format_sse("token", {"content": content_filter.filter_output(piece)})
             yield _format_sse(
                 "done",
                 {
                     "turn_count": turn_count,
                     "escalate": False,
-                    "answer": cached.answer,
+                    "answer": content_filter.filter_output(cached.answer),
                 },
             )
             return
@@ -229,9 +252,7 @@ def _run_stream_pipeline(
 
     emotion_score = orchestrator._estimate_emotion_score(message)
     if orchestrator._should_prioritize_emotion(intent_result, emotion_score):
-        intent_result = orchestrator._override_to_emotion(
-            intent_result, message, emotion_score
-        )
+        intent_result = orchestrator._override_to_emotion(intent_result, message, emotion_score)
 
     intent_value = intent_result.intent.value
     logger.info(
@@ -252,9 +273,7 @@ def _run_stream_pipeline(
             failed_attempts=failed_attempts + 1,
             emotion_score=max(0.0, min(1.0, 1.0 - emotion_score / 5.0)),
         )
-        session_manager.append_history(
-            session_id, "assistant", ESCALATE_REPLY
-        )
+        session_manager.append_history(session_id, "assistant", ESCALATE_REPLY)
         yield _format_sse(
             "meta",
             {"intent": intent_value, "sources": [], "escalate": True},
@@ -288,9 +307,7 @@ def _run_stream_pipeline(
     )
 
 
-def _should_escalate(
-    message: str, intent_result: Any, failed_attempts: int
-) -> bool:
+def _should_escalate(message: str, intent_result: Any, failed_attempts: int) -> bool:
     """判断是否需要转人工。
 
     复用 OrchestratorAgent 的转接判断逻辑，避免与 graph 路径行为分裂：
@@ -324,6 +341,7 @@ def _stream_knowledge_qa(
     RAG 已命中时 meta 含 sources；未命中时 RAG 直接发 done 不走 LLM。
     """
     knowledge_agent = get_knowledge_agent()
+    content_filter = get_content_filter()
     sources: list = []
     answer_parts: list = []
 
@@ -340,6 +358,8 @@ def _stream_knowledge_qa(
         elif event_type == "token":
             content = event.get("content", "")
             if content:
+                # 输出过滤：替换 warn/mask 级敏感词
+                content = content_filter.filter_output(content)
                 answer_parts.append(content)
                 yield _format_sse("token", {"content": content})
         elif event_type == "error":
@@ -349,10 +369,10 @@ def _stream_knowledge_qa(
             answer = event.get("answer", "")
             if not sources and not answer_parts:
                 # 未命中：补发 meta 让前端知道意图
-                yield _format_sse(
-                    "meta", {"intent": intent_value, "sources": []}
-                )
+                yield _format_sse("meta", {"intent": intent_value, "sources": []})
             final_answer = answer or "".join(answer_parts)
+            # 输出过滤：对 done 中的 answer 统一过滤，确保与 token 过滤一致
+            final_answer = content_filter.filter_output(final_answer)
             # 同步会话状态：解决则清零失败计数，否则累加
             is_resolved = bool(final_answer) and "未找到相关内容" not in final_answer
             new_failed = 0 if is_resolved else failed_attempts + 1
@@ -403,6 +423,7 @@ def _stream_non_knowledge(
     再按句末标点切片逐片 yield token，让前端感受到打字效果。
     """
     orchestrator = get_orchestrator()
+    content_filter = get_content_filter()
     intent_value = intent_result.intent.value
 
     # 1. 同步执行子任务，收集完整回复
@@ -413,6 +434,9 @@ def _stream_non_knowledge(
     # 2. 判断是否解决，更新失败计数
     is_resolved = orchestrator._is_resolved(intent_result, sub_tasks)
     new_failed = 0 if is_resolved else failed_attempts + 1
+
+    # 2.5 输出过滤：对完整回复统一过滤，meta/token/done 均使用过滤后文本
+    reply = content_filter.filter_output(reply)
 
     # 3. 发 meta（含完整回复作为 preview，便于前端首屏渲染）
     yield _format_sse(
@@ -451,7 +475,7 @@ _SENTENCE_END_SPLIT = re.compile(r"(?<=[。！？!?\n])")
 _FALLBACK_CHUNK_SIZE = 4
 
 
-def _slice_reply_to_token_pieces(reply: str) -> List[str]:
+def _slice_reply_to_token_pieces(reply: str) -> list[str]:
     """按句末标点切片回复文本，用于模拟流式打字效果。
 
     先按句末标点（。！？!?\n）切片；若仅 1 片（单句回复），
@@ -463,17 +487,16 @@ def _slice_reply_to_token_pieces(reply: str) -> List[str]:
     # 单句回复按字符回退切片，避免只有 1 个 token 无法体现流式效果
     if len(pieces) <= 1:
         pieces = [
-            reply[i : i + _FALLBACK_CHUNK_SIZE]
-            for i in range(0, len(reply), _FALLBACK_CHUNK_SIZE)
+            reply[i : i + _FALLBACK_CHUNK_SIZE] for i in range(0, len(reply), _FALLBACK_CHUNK_SIZE)
         ]
     return pieces
 
 
-def _format_sse(event: str, data: Dict[str, Any]) -> bytes:
+def _format_sse(event: str, data: dict[str, Any]) -> bytes:
     """格式化 SSE 事件：'event: <type>\\ndata: <json>\\n\\n'。
 
     返回 bytes 避免 StreamingResponse 编码歧义；
     data 用 ensure_ascii=False 保留中文可读性。
     """
     payload = json.dumps(data, ensure_ascii=False)
-    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+    return f"event: {event}\ndata: {payload}\n\n".encode()

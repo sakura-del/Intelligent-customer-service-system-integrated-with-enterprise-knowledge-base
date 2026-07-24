@@ -11,9 +11,11 @@
 答案生成为可选（默认不调用 LLM 摘要，仅返回检索结果），
 便于上层（Task 8）按需组合生成策略。
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, Generator, List, Optional
+from collections.abc import Generator
+from typing import Any
 
 from app.agents.llm_client import LLMClient, get_llm_client
 from app.agents.rag_agent import RAGAgent, get_rag_agent
@@ -47,13 +49,13 @@ class KnowledgeAgent:
 
     def __init__(
         self,
-        query_rewriter: Optional[QueryRewriter] = None,
-        hybrid_retriever: Optional[HybridRetriever] = None,
-        reranker: Optional[Reranker] = None,
-        llm_client: Optional[LLMClient] = None,
-        rerank_top_k: Optional[int] = None,
-        score_threshold: Optional[float] = None,
-        rag_agent: Optional[RAGAgent] = None,
+        query_rewriter: QueryRewriter | None = None,
+        hybrid_retriever: HybridRetriever | None = None,
+        reranker: Reranker | None = None,
+        llm_client: LLMClient | None = None,
+        rerank_top_k: int | None = None,
+        score_threshold: float | None = None,
+        rag_agent: RAGAgent | None = None,
     ) -> None:
         # 延迟取单例，便于测试注入自定义实现
         self._query_rewriter = query_rewriter
@@ -102,7 +104,7 @@ class KnowledgeAgent:
     def answer(
         self,
         question: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         generate_summary: bool = False,
     ) -> KnowledgeAnswer:
         """对用户问题执行混合检索 + 重排序，返回 KnowledgeAnswer。
@@ -125,9 +127,7 @@ class KnowledgeAgent:
         queries = self.query_rewriter.rewrite(question, num_variants=2)
         if not queries:
             queries = [question.strip()]
-        logger.info(
-            "查询改写完成：original=%r variants=%d", question[:30], len(queries)
-        )
+        logger.info("查询改写完成：original=%r variants=%d", question[:30], len(queries))
 
         # 2. 混合检索：对每个改写查询召回，合并去重
         candidates = self._retrieve_and_merge(queries)
@@ -198,8 +198,8 @@ class KnowledgeAgent:
     def handle_stream(
         self,
         query: str,
-        session_id: Optional[str] = None,
-    ) -> Generator[Dict[str, Any], None, None]:
+        session_id: str | None = None,
+    ) -> Generator[dict[str, Any], None, None]:
         """流式编排：检索 → 重排序 → 流式生成答案。
 
         协议：
@@ -243,7 +243,7 @@ class KnowledgeAgent:
             session_id=session_id,
         )
 
-    def _retrieve_filter(self, query: str) -> List[RetrievedChunk]:
+    def _retrieve_filter(self, query: str) -> list[RetrievedChunk]:
         """执行查询改写 → 混合检索 → 重排序 → 阈值过滤链路。
 
         抽取公共逻辑便于 answer 与 handle_stream 复用，
@@ -269,7 +269,7 @@ class KnowledgeAgent:
         # 4. 阈值过滤
         return [c for c in ranked_chunks if c.score >= self._score_threshold]
 
-    def _retrieve_and_merge(self, queries: List[str]) -> List[RetrievedChunk]:
+    def _retrieve_and_merge(self, queries: list[str]) -> list[RetrievedChunk]:
         """对多个改写查询分别混合检索，合并去重。
 
         去重键用 chunk 文本前 100 字符：相同文本不同来源视为同一片段。
@@ -289,10 +289,10 @@ class KnowledgeAgent:
         return list(merged.values())
 
     @staticmethod
-    def _format_sources(chunks: List[RetrievedChunk]) -> List[str]:
+    def _format_sources(chunks: list[RetrievedChunk]) -> list[str]:
         """构造来源展示列表，去重并限制数量。"""
         seen = set()
-        sources: List[str] = []
+        sources: list[str] = []
         for chunk in chunks:
             if not chunk.source:
                 continue
@@ -306,7 +306,7 @@ class KnowledgeAgent:
         return sources
 
     @staticmethod
-    def _estimate_confidence(chunks: List[RetrievedChunk]) -> float:
+    def _estimate_confidence(chunks: list[RetrievedChunk]) -> float:
         """根据重排序分数估计置信度。
 
         以 Top-1 分数为主，命中数越多置信度越高，
@@ -326,9 +326,7 @@ class KnowledgeAgent:
         """
         return self.reranker.mode
 
-    def _generate_summary(
-        self, question: str, chunks: List[RetrievedChunk]
-    ) -> str:
+    def _generate_summary(self, question: str, chunks: list[RetrievedChunk]) -> str:
         """调用 LLM 基于检索片段生成摘要回答。
 
         复用 RAGAgent 的 prompt 结构，但本 Agent 默认不调用，
@@ -338,7 +336,7 @@ class KnowledgeAgent:
             return ""
 
         # 构造上下文片段，截断控制 token
-        context_lines: List[str] = []
+        context_lines: list[str] = []
         for idx, chunk in enumerate(chunks, start=1):
             truncated = chunk.text[:800]
             context_lines.append(
@@ -358,8 +356,7 @@ class KnowledgeAgent:
             {
                 "role": "user",
                 "content": (
-                    f"知识片段：\n{context_block}\n\n"
-                    f"用户问题：{question}\n\n请基于片段回答。"
+                    f"知识片段：\n{context_block}\n\n用户问题：{question}\n\n请基于片段回答。"
                 ),
             },
         ]
@@ -390,7 +387,7 @@ class KnowledgeAgent:
 
 
 # 模块级单例：Agent 编排无状态，进程内复用
-_knowledge_agent: Optional[KnowledgeAgent] = None
+_knowledge_agent: KnowledgeAgent | None = None
 
 
 def get_knowledge_agent() -> KnowledgeAgent:

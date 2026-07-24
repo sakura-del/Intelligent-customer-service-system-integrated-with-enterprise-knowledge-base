@@ -252,6 +252,32 @@ RAGAS 四项生成质量指标（Faithfulness / Answer Relevancy / Context Preci
 - **真实 LLM 调用失败** → ModelRouter 自动回退默认模型重试
 - **Langfuse 未配置或上报失败** → 降级为 no-op，LLMClient 回退原生 OpenAI SDK，不影响主链路
 
+## 安全
+
+系统已内置生产化加固所需的多层安全机制，详见 [安全加固指南](https://intelligent-cs-8p2.pages.dev/tutorials/security-hardening/) 与 [配置说明 - 安全配置](https://intelligent-cs-8p2.pages.dev/configuration/#_4)。
+
+**安全特性**：
+
+- **API Key 鉴权**：`X-API-Key` 请求头校验，使用 `secrets.compare_digest` 常量时间比较防时序攻击；`API_KEY` 为空时进入开发免鉴权模式，启动时输出 WARNING 告警
+- **CORS 白名单**：`ALLOWED_ORIGINS` 控制允许的跨源域名，白名单模式下才允许凭据；`DEBUG=True` 且未配置时回退允许所有源
+- **安全响应头**：自动附加 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: strict-origin-when-cross-origin`，HTTPS 下追加 HSTS
+- **全局 IP 限流**：滑动窗口算法，默认 60 req/min/IP，超限返回 429 + `Retry-After`；`RATE_LIMIT_ENABLED=False` 时降级放行
+- **运行时双向敏感词过滤**：AC 自动机多模式匹配，分 `block`（拦截）/`warn`（整词替换 `***`）/`mask`（首尾保留中间打码）三级
+- **日志 PII 自动脱敏**：日志过滤器自动打码手机号 / 身份证 / 邮箱 / 银行卡
+- **会话超时自动清理**：后台线程按 `SESSION_CLEANUP_INTERVAL` 周期清理超过 `SESSION_TTL` 未活动的会话
+- **文件上传限制**：类型白名单（`.md`/`.txt`/`.pdf`/`.docx`）+ 10MB 上限
+- **运维 API 鉴权**：`/api/v1/knowledge/*`、`/api/v1/operations/*` 等运维端点强制依赖 API Key
+
+**生产部署注意事项**：
+
+- [ ] 配置强随机非空的 `API_KEY`
+- [ ] 配置 `ALLOWED_ORIGINS` 为前端实际域名，逗号分隔
+- [ ] 设置 `DEBUG=False`，避免错误堆栈泄露
+- [ ] 在反向代理（Nginx/Caddy）层启用 HTTPS，HSTS 自动生效
+- [ ] 在 `app/knowledge/sensitive_words.txt` 中按 `词|级别` 格式补充业务敏感词
+- [ ] 多进程部署时将限流替换为 Redis 等共享存储方案
+- [ ] 反向代理层覆盖 `X-Forwarded-For` 以防客户端伪造 IP
+
 ## 开发规范
 
 - **Spec 驱动开发**：`.trae/specs/` 下维护 spec.md / tasks.md / checklist.md 三件套

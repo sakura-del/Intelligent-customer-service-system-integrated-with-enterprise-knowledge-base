@@ -3,10 +3,11 @@
 定义业务场景枚举、参数提取结果与执行结果的数据契约，
 作为 BusinessAgent 与 mock 业务系统 API 之间的统一结构。
 """
+
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -39,15 +40,15 @@ class ExtractedParams(BaseModel):
         "query",
         description="操作类型：query(查询)/create(创建)/cancel(取消)",
     )
-    order_id: Optional[str] = Field(None, description="订单号")
-    return_id: Optional[str] = Field(None, description="退换货单号")
-    user_id: Optional[str] = Field(None, description="用户标识")
-    phone: Optional[str] = Field(None, description="手机号")
-    query_type: Optional[str] = Field(
+    order_id: str | None = Field(None, description="订单号")
+    return_id: str | None = Field(None, description="退换货单号")
+    user_id: str | None = Field(None, description="用户标识")
+    phone: str | None = Field(None, description="手机号")
+    query_type: str | None = Field(
         None,
         description="查询细分类型，如 status/logistics/amount/points/level 等",
     )
-    reason: Optional[str] = Field(None, description="退换货原因")
+    reason: str | None = Field(None, description="退换货原因")
 
 
 class BusinessResult(BaseModel):
@@ -60,10 +61,8 @@ class BusinessResult(BaseModel):
     """
 
     reply: str = Field(..., description="给用户的最终回复文本")
-    scene: Optional[BusinessScene] = Field(
-        None, description="命中的业务场景，便于上层路由统计"
-    )
-    data: Dict[str, Any] = Field(
+    scene: BusinessScene | None = Field(None, description="命中的业务场景，便于上层路由统计")
+    data: dict[str, Any] = Field(
         default_factory=dict,
         description="结构化结果数据，已脱敏，供前端展示或调试",
     )
@@ -71,11 +70,11 @@ class BusinessResult(BaseModel):
         False,
         description="是否需要用户二次确认（写操作）",
     )
-    confirmation_token: Optional[str] = Field(
+    confirmation_token: str | None = Field(
         None,
         description="待确认操作的令牌，确认时回传或由 Agent 内部匹配",
     )
-    error: Optional[str] = Field(
+    error: str | None = Field(
         None,
         description="错误码/错误信息，None 表示执行成功",
     )

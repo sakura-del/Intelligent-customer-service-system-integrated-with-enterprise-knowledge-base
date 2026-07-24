@@ -38,6 +38,15 @@ openai>=1.40.0,<2.0.0
 # LLM 调用链路追踪与监控：未配置或 LANGFUSE_ENABLED=False 时自动降级为 no-op，不影响主链路
 langfuse>=2.0.0
 
+# ===== 内容安全（运行时双向敏感词过滤）=====
+# pyahocorasick：AC 自动机多模式匹配，未安装时 ContentFilter 降级为禁用模式
+pyahocorasick>=2.0.0
+
+# ===== 全局限流（基于 IP 维度的速率限制）=====
+# slowapi：FastAPI 限流库，当前主链路使用自实现的滑动窗口中间件，
+# 此依赖作为可选扩展点保留，未安装时自动降级为纯自实现限流
+slowapi>=0.1.9
+
 # ===== 多 Agent 编排与通信依赖 =====
 # LangGraph：Agent 编排与状态机（不可用时自动 fallback 到同步编排器）
 langgraph>=0.2.34

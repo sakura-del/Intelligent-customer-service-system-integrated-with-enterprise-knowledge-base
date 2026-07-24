@@ -9,9 +9,8 @@
 所有数值字段提供默认值，fallback embedding 模式下检索可能为空，
 报告仍需结构完整以便上层展示。
 """
-from __future__ import annotations
 
-from typing import List, Optional
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
@@ -37,10 +36,10 @@ class CanaryQueryResult(BaseModel):
     query: str = Field("", description="样本查询文本")
     target_version: str = Field("", description="目标版本号，如 v2")
     current_version: str = Field("", description="当前版本号，如 v1")
-    target_results: List[CanaryHitItem] = Field(
+    target_results: list[CanaryHitItem] = Field(
         default_factory=list, description="目标版本 Top-K 检索结果"
     )
-    current_results: List[CanaryHitItem] = Field(
+    current_results: list[CanaryHitItem] = Field(
         default_factory=list, description="当前版本 Top-K 检索结果"
     )
     similarity_diff: float = Field(
@@ -58,7 +57,7 @@ class CanaryReport(BaseModel):
     doc_id: str = Field("", description="被验证文档 ID")
     target_version: str = Field("", description="目标版本号")
     current_version: str = Field("", description="当前版本号")
-    query_results: List[CanaryQueryResult] = Field(
+    query_results: list[CanaryQueryResult] = Field(
         default_factory=list, description="各样本查询的对比结果"
     )
     avg_similarity_diff: float = Field(
@@ -69,4 +68,4 @@ class CanaryReport(BaseModel):
         False,
         description="灰度集合是否不可用；为 True 时仅返回主集合结果并降级",
     )
-    error: Optional[str] = Field(None, description="灰度过程中的错误信息，成功时为空")
+    error: str | None = Field(None, description="灰度过程中的错误信息，成功时为空")

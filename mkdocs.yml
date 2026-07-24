@@ -128,6 +128,7 @@ nav:
       - 性能优化: tutorials/performance.md
       - 可观测性: tutorials/observability.md
       - 运营管理: tutorials/operations.md
+      - 安全加固: tutorials/security-hardening.md
   - API 参考: api-reference.md
   - 示例: examples.md
   - 常见问题: faq.md

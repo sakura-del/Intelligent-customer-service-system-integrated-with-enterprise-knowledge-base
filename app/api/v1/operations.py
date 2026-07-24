@@ -9,15 +9,14 @@
 - GET    /api/v1/operations/release-checklist：上线检查报告
 
 设计要点：
-- 不做鉴权，便于运维面板无凭据访问（生产环境可加 IP 白名单或反代鉴权）
+- 通过 API Key 鉴权保护运维接口，未配置 API_KEY 时进入开发免鉴权模式
 - 实验名重复时返回 409，未找到时返回 404
 - 看板数据复用 30 秒缓存，避免高频请求重复聚合
 """
+
 from __future__ import annotations
 
-from typing import List
-
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.experiment import get_experiment_manager
 from app.core.logging import get_logger
@@ -25,6 +24,7 @@ from app.core.operations import (
     ReleaseChecklist,
     get_operations_collector,
 )
+from app.core.security import verify_api_key
 from app.schemas.operations import (
     ChecklistReport,
     CreateExperimentRequest,
@@ -36,7 +36,11 @@ from app.schemas.operations import (
 
 logger = get_logger("app.api.v1.operations")
 
-router = APIRouter(prefix="/api/v1/operations", tags=["发布与运营"])
+router = APIRouter(
+    prefix="/api/v1/operations",
+    tags=["发布与运营"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 
 # ----------------------------------------------------------------------
@@ -61,8 +65,8 @@ def create_experiment(request: CreateExperimentRequest) -> Experiment:
     return manager.create_experiment_from_request(request)
 
 
-@router.get("/experiments", response_model=List[Experiment])
-def list_experiments() -> List[Experiment]:
+@router.get("/experiments", response_model=list[Experiment])
+def list_experiments() -> list[Experiment]:
     """列出全部实验。"""
     return get_experiment_manager().list_experiments()
 
@@ -88,6 +92,7 @@ def get_experiment_results(name: str) -> ExperimentResults:
 @router.post(
     "/experiments/{name}/metrics",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 def record_metric(name: str, request: RecordMetricRequest) -> None:
     """记录一条实验指标。

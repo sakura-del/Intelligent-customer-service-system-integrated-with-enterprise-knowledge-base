@@ -11,12 +11,12 @@
 
 线程安全：参数缓存用 RLock 保护，避免并发更新导致状态不一致。
 """
+
 from __future__ import annotations
 
 import json
 import threading
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -94,7 +94,7 @@ class TunerParams(BaseModel):
             raise ValueError("rrf_keyword_weight 必须在 [0.0, 1.0] 范围内")
         return value
 
-    def merge(self, patch: "TunerParams") -> "TunerParams":
+    def merge(self, patch: TunerParams) -> TunerParams:
         """用非空 patch 字段覆盖当前参数，返回新实例。
 
         用于 PUT /params 部分更新场景：仅更新传入字段，其余保持原值。
@@ -206,9 +206,7 @@ class RetrievalTuner:
             payload = json.loads(path.read_text(encoding="utf-8"))
             return TunerParams(**payload)
         except Exception as exc:
-            logger.warning(
-                "加载持久化调优参数失败，使用默认值：%s", exc
-            )
+            logger.warning("加载持久化调优参数失败，使用默认值：%s", exc)
             return TunerParams()
 
     def _persist_path(self) -> Path:
@@ -218,7 +216,7 @@ class RetrievalTuner:
 
 
 # 模块级单例：参数缓存进程内共享
-_retrieval_tuner: Optional[RetrievalTuner] = None
+_retrieval_tuner: RetrievalTuner | None = None
 _tuner_lock = threading.Lock()
 
 

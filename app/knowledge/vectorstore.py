@@ -3,11 +3,12 @@
 提供集合初始化、批量写入、相似度检索与去重判断，
 作为知识库持久层供 pipeline 与 RAG 检索调用。
 """
+
 from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -66,7 +67,7 @@ class VectorStore:
         """返回集合中当前条目数。"""
         return self._collection.count()
 
-    def get_all_chunks(self, batch_size: int = 500) -> List[Dict[str, Any]]:
+    def get_all_chunks(self, batch_size: int = 500) -> list[dict[str, Any]]:
         """拉取集合中全部 chunks，用于构建 BM25 等需要全量索引的场景。
 
         分批拉取避免一次性加载大集合导致内存峰值；
@@ -76,7 +77,7 @@ class VectorStore:
         if total == 0:
             return []
 
-        all_hits: List[Dict[str, Any]] = []
+        all_hits: list[dict[str, Any]] = []
         offset = 0
         # 分页拉取，每批 batch_size 条，控制单次内存占用
         while offset < total:
@@ -106,9 +107,9 @@ class VectorStore:
 
     def add_chunks(
         self,
-        chunks: List[TextChunk],
-        embeddings: List[List[float]],
-        metadatas: Optional[List[Dict[str, Any]]] = None,
+        chunks: list[TextChunk],
+        embeddings: list[list[float]],
+        metadatas: list[dict[str, Any]] | None = None,
         skip_dedup: bool = False,
     ) -> int:
         """批量写入 chunk 与向量。
@@ -131,16 +132,18 @@ class VectorStore:
         else:
             duplicate_flags = self._batch_check_duplicate(embeddings)
 
-        to_add_ids: List[str] = []
-        to_add_texts: List[str] = []
-        to_add_embeddings: List[List[float]] = []
-        to_add_metadatas: List[Dict[str, Any]] = []
+        to_add_ids: list[str] = []
+        to_add_texts: list[str] = []
+        to_add_embeddings: list[list[float]] = []
+        to_add_metadatas: list[dict[str, Any]] = []
         deduped = 0
         for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
             if duplicate_flags[index]:
                 deduped += 1
                 continue
-            metadata = metadatas[index] if metadatas and index < len(metadatas) else dict(chunk.metadata)
+            metadata = (
+                metadatas[index] if metadatas and index < len(metadatas) else dict(chunk.metadata)
+            )
             # ChromaDB 元数据值必须是基础类型，序列化复杂字段
             metadata = self._normalize_metadata(metadata)
             to_add_ids.append(str(uuid.uuid4()))
@@ -160,7 +163,7 @@ class VectorStore:
             logger.info("全部 %d 条 chunk 均判为重复，跳过写入", deduped)
         return len(to_add_ids)
 
-    def _batch_check_duplicate(self, embeddings: List[List[float]]) -> List[bool]:
+    def _batch_check_duplicate(self, embeddings: list[list[float]]) -> list[bool]:
         """批量查询每个向量的最近邻判断是否重复。
 
         返回与 embeddings 等长的布尔列表，True 表示已存在相似向量。
@@ -180,7 +183,7 @@ class VectorStore:
             return [False] * len(embeddings)
 
         distances_list = results.get("distances") or []
-        flags: List[bool] = []
+        flags: list[bool] = []
         for distances in distances_list:
             if not distances:
                 flags.append(False)
@@ -193,11 +196,11 @@ class VectorStore:
 
     def query(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 5,
         score_threshold: float = 0.0,
-        where: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+        where: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """向量相似度检索。
 
         ChromaDB 默认按距离排序，返回前 top_k 中满足 score_threshold 的结果。
@@ -209,7 +212,7 @@ class VectorStore:
             where=where,
         )
 
-        hits: List[Dict[str, Any]] = []
+        hits: list[dict[str, Any]] = []
         if not results or not results.get("ids"):
             return hits
 
@@ -235,13 +238,13 @@ class VectorStore:
         return hits
 
     @staticmethod
-    def _normalize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         """规范化元数据值类型，保证 ChromaDB 可存储。
 
         ChromaDB 仅支持 str/int/float/bool/None，
         复杂类型统一转字符串避免写入失败。
         """
-        normalized: Dict[str, Any] = {}
+        normalized: dict[str, Any] = {}
         for key, value in metadata.items():
             if value is None or isinstance(value, (str, int, float, bool)):
                 normalized[key] = value
@@ -251,7 +254,7 @@ class VectorStore:
 
 
 # 模块级单例，避免重复打开 PersistentClient
-_vector_store: Optional[VectorStore] = None
+_vector_store: VectorStore | None = None
 
 
 def get_vector_store() -> VectorStore:

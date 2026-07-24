@@ -10,10 +10,10 @@
 - 错误条目带 ticket_id 与原因，便于人工排查
 - 字段命名与既有 IngestResult 风格保持一致
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,18 +26,15 @@ class MiningRequest(BaseModel):
     传 None 表示不过滤状态（默认行为：挖掘全部工单）。
     """
 
-    start_time: Optional[datetime] = Field(
+    start_time: datetime | None = Field(
         None, description="工单创建时间下界（含），ISO8601；不传表示不限"
     )
-    end_time: Optional[datetime] = Field(
+    end_time: datetime | None = Field(
         None, description="工单创建时间上界（含），ISO8601；不传表示不限"
     )
-    status: Optional[str] = Field(
+    status: str | None = Field(
         None,
-        description=(
-            "工单状态过滤：pending/processing/resolved/closed；"
-            "不传表示不过滤状态"
-        ),
+        description=("工单状态过滤：pending/processing/resolved/closed；不传表示不过滤状态"),
     )
 
 
@@ -53,12 +50,8 @@ class MinedKnowledgeItem(BaseModel):
     answer: str = Field(..., description="抽取的答案片段（已脱敏）")
     category: str = Field(..., description="工单分类，与 TicketCategory 对齐")
     priority: str = Field(..., description="工单优先级，与 TicketPriority 对齐")
-    ingested: bool = Field(
-        False, description="是否已成功入库向量库"
-    )
-    skip_reason: Optional[str] = Field(
-        None, description="未入库原因：duplicate/empty/ingest_failed"
-    )
+    ingested: bool = Field(False, description="是否已成功入库向量库")
+    skip_reason: str | None = Field(None, description="未入库原因：duplicate/empty/ingest_failed")
 
 
 class MiningReport(BaseModel):
@@ -75,9 +68,7 @@ class MiningReport(BaseModel):
     """
 
     started_at: datetime = Field(..., description="挖掘开始时间（UTC）")
-    finished_at: Optional[datetime] = Field(
-        None, description="挖掘结束时间（UTC），进行中为空"
-    )
+    finished_at: datetime | None = Field(None, description="挖掘结束时间（UTC），进行中为空")
     total_tickets: int = Field(0, description="扫描的工单总数")
     processed: int = Field(0, description="完成标注+抽取的工单数")
     ingested: int = Field(0, description="实际入库的知识条数")
@@ -85,11 +76,11 @@ class MiningReport(BaseModel):
     skipped: int = Field(0, description="空内容/抽取失败跳过的条数")
     failed: int = Field(0, description="处理异常的工单数")
     duration_seconds: float = Field(0.0, description="本次挖掘总耗时（秒）")
-    items: List[MinedKnowledgeItem] = Field(
+    items: list[MinedKnowledgeItem] = Field(
         default_factory=list,
         description="本次挖掘的明细条目，便于前端展示与审计",
     )
-    errors: List[str] = Field(
+    errors: list[str] = Field(
         default_factory=list,
         description="错误信息列表，每条含 ticket_id 与原因摘要",
     )

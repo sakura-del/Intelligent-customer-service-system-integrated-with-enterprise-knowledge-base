@@ -12,13 +12,14 @@
 每次尝试独立捕获异常并记录诊断信息（源 URL、失败原因、耗时），
 便于通过 get_embedding_diagnostics() 排查加载失败原因。
 """
+
 from __future__ import annotations
 
 import hashlib
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -43,29 +44,31 @@ class _FallbackEmbedder:
     def __init__(self, dim: int = BGE_LARGE_ZH_DIMENSION) -> None:
         self.dim = dim
 
-    def encode(self, texts: List[str]) -> List[List[float]]:
-        vectors: List[List[float]] = []
+    def encode(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
         for text in texts:
             # 用 sha256 派生 32 字节，循环填充到目标维度
             digest = hashlib.sha256(text.encode("utf-8")).digest()
-            vector = [(b - 128) / 128.0 for b in (digest * (self.dim // len(digest) + 1))[: self.dim]]
+            vector = [
+                (b - 128) / 128.0 for b in (digest * (self.dim // len(digest) + 1))[: self.dim]
+            ]
             vectors.append(vector)
         return vectors
 
 
 def _record_attempt(
-    diagnostics: List[Dict[str, Any]],
+    diagnostics: list[dict[str, Any]],
     source: str,
     success: bool,
     elapsed_ms: float,
-    error: Optional[str] = None,
+    error: str | None = None,
 ) -> None:
     """安全追加一次加载尝试的诊断记录。
 
     使用全局 RLock 保证多线程并发加载时诊断列表不撕裂，
     追加失败不影响主链路。
     """
-    record: Dict[str, Any] = {
+    record: dict[str, Any] = {
         "source": source,
         "success": success,
         "elapsed_ms": int(elapsed_ms),
@@ -94,7 +97,7 @@ class EmbeddingService:
         self._mode = "unknown"
         self._fallback = _FallbackEmbedder()
         # 诊断信息：记录每次加载尝试，便于排查
-        self._diagnostics: List[Dict[str, Any]] = []
+        self._diagnostics: list[dict[str, Any]] = []
         self._load_model()
 
     # ------------------------------------------------------------------
@@ -128,7 +131,7 @@ class EmbeddingService:
         # 4. 全部失败：降级 fallback
         self._apply_fallback()
 
-    def _try_load_huggingface_main(self) -> Optional[Any]:
+    def _try_load_huggingface_main(self) -> Any | None:
         """尝试从 HuggingFace 主源加载模型。"""
         start = time.perf_counter()
         try:
@@ -150,9 +153,7 @@ class EmbeddingService:
             return model
         except Exception as exc:
             elapsed = (time.perf_counter() - start) * 1000.0
-            _record_attempt(
-                self._diagnostics, "huggingface_main", False, elapsed, str(exc)
-            )
+            _record_attempt(self._diagnostics, "huggingface_main", False, elapsed, str(exc))
             logger.warning(
                 "HuggingFace 主源加载失败（%dms）：%s，尝试镜像源",
                 int(elapsed),
@@ -160,7 +161,7 @@ class EmbeddingService:
             )
             return None
 
-    def _try_load_hf_mirror(self) -> Optional[Any]:
+    def _try_load_hf_mirror(self) -> Any | None:
         """尝试从 HuggingFace 镜像源加载模型。"""
         start = time.perf_counter()
         try:
@@ -186,9 +187,7 @@ class EmbeddingService:
             return model
         except Exception as exc:
             elapsed = (time.perf_counter() - start) * 1000.0
-            _record_attempt(
-                self._diagnostics, "hf_mirror", False, elapsed, str(exc)
-            )
+            _record_attempt(self._diagnostics, "hf_mirror", False, elapsed, str(exc))
             logger.warning(
                 "镜像源加载失败（%dms）：%s，尝试本地缓存",
                 int(elapsed),
@@ -196,7 +195,7 @@ class EmbeddingService:
             )
             return None
 
-    def _try_load_local_cache(self) -> Optional[Any]:
+    def _try_load_local_cache(self) -> Any | None:
         """尝试从本地缓存目录加载模型。
 
         仅当目录存在且含 config.json + 权重文件时尝试，
@@ -234,9 +233,7 @@ class EmbeddingService:
             return model
         except Exception as exc:
             elapsed = (time.perf_counter() - start) * 1000.0
-            _record_attempt(
-                self._diagnostics, "local_cache", False, elapsed, str(exc)
-            )
+            _record_attempt(self._diagnostics, "local_cache", False, elapsed, str(exc))
             logger.warning(
                 "本地缓存加载失败（%dms）：%s，降级 fallback",
                 int(elapsed),
@@ -292,12 +289,12 @@ class EmbeddingService:
             return self._model.get_sentence_embedding_dimension()
         return BGE_LARGE_ZH_DIMENSION
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """批量向量化，按 batch_size 分批避免一次性占用过多内存。"""
         if not texts:
             return []
 
-        results: List[List[float]] = []
+        results: list[list[float]] = []
         for start in range(0, len(texts), self.batch_size):
             batch = texts[start : start + self.batch_size]
             if self._mode == "bge" and self._model is not None:
@@ -309,7 +306,7 @@ class EmbeddingService:
                 results.extend(self._fallback.encode(batch))
         return results
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str) -> list[float]:
         """单条 query 向量化，检索时使用。"""
         vectors = self.embed_texts([text])
         return vectors[0] if vectors else []
@@ -363,7 +360,7 @@ def reset_embedding_service() -> None:
         _embedding_service = None
 
 
-def get_embedding_diagnostics() -> Dict[str, Any]:
+def get_embedding_diagnostics() -> dict[str, Any]:
     """获取当前 Embedding 服务的加载诊断信息。
 
     返回结构：

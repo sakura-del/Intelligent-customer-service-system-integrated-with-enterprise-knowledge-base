@@ -4,12 +4,12 @@
 覆盖 PDF / Word / HTML / 纯文本 / Markdown 等常见来源，
 为后续切分与向量化提供结构化输入。
 """
+
 from __future__ import annotations
 
 import hashlib
 import re
 from pathlib import Path
-from typing import List
 
 from app.core.logging import get_logger
 from app.schemas.knowledge import ParsedDocument, ParsedPage, SectionInfo
@@ -35,8 +35,8 @@ def parse_pdf(file_path: Path) -> ParsedDocument:
     """
     import fitz  # PyMuPDF
 
-    pages: List[ParsedPage] = []
-    full_text_parts: List[str] = []
+    pages: list[ParsedPage] = []
+    full_text_parts: list[str] = []
     with fitz.open(file_path) as doc:
         for page_index, page in enumerate(doc, start=1):
             text = page.get_text("text") or ""
@@ -54,9 +54,9 @@ def parse_pdf(file_path: Path) -> ParsedDocument:
     )
 
 
-def _extract_markdown_sections(text: str) -> List[SectionInfo]:
+def _extract_markdown_sections(text: str) -> list[SectionInfo]:
     """从纯文本中识别 Markdown 标题作为章节边界。"""
-    sections: List[SectionInfo] = []
+    sections: list[SectionInfo] = []
     for match in _MARKDOWN_HEADING_PATTERN.finditer(text):
         level = len(match.group(1))
         title = match.group(2).strip()
@@ -73,8 +73,8 @@ def parse_docx(file_path: Path) -> ParsedDocument:
     import docx
 
     document = docx.Document(str(file_path))
-    sections: List[SectionInfo] = []
-    paragraph_texts: List[str] = []
+    sections: list[SectionInfo] = []
+    paragraph_texts: list[str] = []
     for paragraph in document.paragraphs:
         text = paragraph.text.strip()
         if not text:
@@ -115,7 +115,7 @@ def parse_html(file_path: Path) -> ParsedDocument:
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
 
-    sections: List[SectionInfo] = []
+    sections: list[SectionInfo] = []
     for heading_tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
         title = heading_tag.get_text(strip=True)
         if title:
@@ -136,7 +136,9 @@ def parse_html(file_path: Path) -> ParsedDocument:
 def parse_plain_text(file_path: Path) -> ParsedDocument:
     """解析纯文本/Markdown：直接读取，并尝试识别 Markdown 标题。"""
     text = file_path.read_text(encoding="utf-8", errors="ignore")
-    sections: List[SectionInfo] = _extract_markdown_sections(text) if file_path.suffix.lower() in {".md", ".markdown"} else []
+    sections: list[SectionInfo] = (
+        _extract_markdown_sections(text) if file_path.suffix.lower() in {".md", ".markdown"} else []
+    )
     pages = [ParsedPage(page_number=1, text=text, sections=sections)]
     file_type = "md" if file_path.suffix.lower() in {".md", ".markdown"} else "txt"
     return ParsedDocument(
