@@ -92,6 +92,7 @@ def get_experiment_results(name: str) -> ExperimentResults:
 @router.post(
     "/experiments/{name}/metrics",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 def record_metric(name: str, request: RecordMetricRequest) -> None:
     """记录一条实验指标。
