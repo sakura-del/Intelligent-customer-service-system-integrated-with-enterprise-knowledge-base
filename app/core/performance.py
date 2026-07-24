@@ -11,6 +11,7 @@
 - 延迟初始化：LLMClient 等重资源按需获取，避免启动开销
 - 阈值可通过环境变量配置，无需修改 config.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,8 +21,9 @@ import os
 import threading
 import time
 from collections import OrderedDict, deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Deque, Dict, List, Optional
+from typing import Any
 
 from app.core.logging import get_logger
 from app.schemas.performance import (
@@ -56,9 +58,7 @@ INTENT_CACHE_TTL = int(os.environ.get("INTENT_CACHE_TTL", "1800"))
 RESPONSE_TIME_SAMPLE_LIMIT = 100
 
 
-def cache_key(
-    query: str, session_context: Optional[Dict[str, Any]] = None
-) -> str:
+def cache_key(query: str, session_context: dict[str, Any] | None = None) -> str:
     """生成热点缓存键：归一化 query + 上下文关键信息哈希。
 
     归一化：strip + lower，消除大小写与首尾空白差异。
@@ -108,7 +108,7 @@ class ModelRouter:
         self._large_model = large_model
         self._threshold = threshold
         # 路由统计：model -> {calls, total_complexity}
-        self._stats: Dict[str, Dict[str, float]] = {}
+        self._stats: dict[str, dict[str, float]] = {}
         self._lock = threading.RLock()
 
     def route(
@@ -187,14 +187,12 @@ class ModelRouter:
     def _record_routing(self, model: str, complexity: float) -> None:
         """记录路由统计（线程安全）。"""
         with self._lock:
-            stat = self._stats.setdefault(
-                model, {"calls": 0, "total_complexity": 0.0}
-            )
+            stat = self._stats.setdefault(model, {"calls": 0, "total_complexity": 0.0})
             stat["calls"] += 1
             stat["total_complexity"] += complexity
 
     @staticmethod
-    def _get_small_client() -> Optional[Any]:
+    def _get_small_client() -> Any | None:
         """延迟获取小模型 LLMClient 单例。
 
         未配置 SMALL_LLM_API_KEY 时返回 None，调用方降级到主 LLMClient。
@@ -210,23 +208,24 @@ class ModelRouter:
 
     def chat_with_routing(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         *,
         query: str,
-        model_override: Optional[str] = None,
-        name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        model_override: str | None = None,
+        name: str | None = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> str:
         """根据 query 路由到合适模型并调用 LLMClient 生成回复。
 
         双 Provider 路由策略：
-        - model_override 非空：直接用主 client 临时切换 model（兼容旧逻辑）
+        - model_override 非空：通过 model 参数传给主 client（不修改属性）
         - 路由到小模型且 small_client 可用：用 small_client（独立 Provider）
-        - 路由到小模型但 small_client 不可用：降级主 client 临时切换 model
+        - 路由到小模型但 small_client 不可用：通过 model 参数传给主 client
         - 路由到大模型：用主 client
 
-        异常时降级到主 client 重试，保证链路可用。
+        通过 model 参数传递而非修改 main_client.model 属性，
+        避免高并发下的竞态条件。异常时降级到主 client 默认模型重试。
 
         name/metadata 透传给底层 LLMClient.chat，便于 Langfuse 平台
         按 prompt name 聚合分析调用情况。
@@ -264,49 +263,37 @@ class ModelRouter:
                         main_client, messages, target_model, **kwargs
                     )
 
-        # 主 client 路径：临时切换 model 实现 model_override
-        return self._chat_with_main_fallback(
-            main_client, messages, target_model, **kwargs
-        )
+        # 主 client 路径：通过 model 参数传递目标模型，不修改 main_client.model 属性
+        return self._chat_with_main_fallback(main_client, messages, target_model, **kwargs)
 
     @staticmethod
     def _chat_with_main_fallback(
         main_client: Any,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         target_model: str,
         **kwargs: Any,
     ) -> str:
-        """主 client 调用：临时切换 model，异常时降级到原 model 重试。
+        """主 client 调用：通过 model 参数传递目标模型，异常时降级到默认模型重试。
 
-        临时切换 model 在高并发下存在竞态（best-effort），
-        mock 模式下不影响结果；生产场景偶发模型错配会触发降级重试。
+        通过 model 参数传递而非修改 main_client.model 属性，
+        避免高并发下多线程读到错误的 model（竞态条件）。
+        首次用 target_model 调用，失败时不传 model（使用 main_client 默认模型）重试。
         """
-        original_model = main_client.model
         try:
-            main_client.model = target_model
-            return main_client.chat(messages, **kwargs)
+            return main_client.chat(messages, model=target_model, **kwargs)
         except Exception as exc:
-            # 调用失败：恢复默认模型并重试一次，保证链路可用
-            logger.warning(
-                "模型 %s 调用失败，降级默认模型重试：%s", target_model, exc
-            )
-            main_client.model = original_model
+            # 调用失败：降级到默认模型重试一次，保证链路可用
+            # 不传 model，让 main_client.chat 使用其 self.model（默认模型）
+            logger.warning("模型 %s 调用失败，降级默认模型重试：%s", target_model, exc)
             return main_client.chat(messages, **kwargs)
-        finally:
-            # 确保 model 总能恢复，避免污染后续调用
-            main_client.model = original_model
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """返回路由统计（线程安全）。"""
         with self._lock:
-            small_calls = int(
-                self._stats.get(self._small_model, {}).get("calls", 0)
-            )
-            large_calls = int(
-                self._stats.get(self._large_model, {}).get("calls", 0)
-            )
+            small_calls = int(self._stats.get(self._small_model, {}).get("calls", 0))
+            large_calls = int(self._stats.get(self._large_model, {}).get("calls", 0))
             total = small_calls + large_calls
-            per_model: List[Dict[str, Any]] = []
+            per_model: list[dict[str, Any]] = []
             for model_name, stat in self._stats.items():
                 calls = int(stat["calls"])
                 avg = stat["total_complexity"] / calls if calls > 0 else 0.0
@@ -323,9 +310,7 @@ class ModelRouter:
                 "small_model_calls": small_calls,
                 "large_model_calls": large_calls,
                 "total_calls": total,
-                "small_model_ratio": (
-                    round(small_calls / total, 4) if total > 0 else 0.0
-                ),
+                "small_model_ratio": (round(small_calls / total, 4) if total > 0 else 0.0),
                 "per_model": per_model,
             }
 
@@ -355,7 +340,7 @@ class HotQueryCache:
         self._ttl = ttl_seconds
         self._enabled = True
         try:
-            self._store: "OrderedDict[str, CacheEntry]" = OrderedDict()
+            self._store: OrderedDict[str, CacheEntry] = OrderedDict()
         except Exception as exc:
             # 初始化失败：降级为不缓存，保证主链路可用
             logger.warning("热点缓存初始化失败，降级为不缓存：%s", exc)
@@ -367,9 +352,7 @@ class HotQueryCache:
         self._evicted = 0
         self._lock = threading.RLock()
 
-    def get(
-        self, query: str, session_context: Optional[Dict[str, Any]] = None
-    ) -> Optional[CacheEntry]:
+    def get(self, query: str, session_context: dict[str, Any] | None = None) -> CacheEntry | None:
         """获取缓存条目，命中且未过期返回 CacheEntry，否则 None。"""
         if not self._enabled:
             return None
@@ -394,8 +377,8 @@ class HotQueryCache:
         self,
         query: str,
         answer: str,
-        sources: Optional[List[str]] = None,
-        session_context: Optional[Dict[str, Any]] = None,
+        sources: list[str] | None = None,
+        session_context: dict[str, Any] | None = None,
     ) -> None:
         """写入缓存条目，超限时按 LRU 淘汰最旧。"""
         if not self._enabled:
@@ -425,7 +408,7 @@ class HotQueryCache:
             self._store.clear()
             return cleared
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """返回缓存统计（线程安全）。"""
         with self._lock:
             total = self._hits + self._misses
@@ -470,7 +453,7 @@ class IntentCache:
         self._ttl = ttl_seconds
         self._enabled = True
         try:
-            self._store: "OrderedDict[str, tuple[Any, float]]" = OrderedDict()
+            self._store: OrderedDict[str, tuple[Any, float]] = OrderedDict()
         except Exception as exc:
             logger.warning("意图缓存初始化失败，降级为不缓存：%s", exc)
             self._enabled = False
@@ -485,7 +468,7 @@ class IntentCache:
         """归一化 query 作为缓存键：strip + lower，消除大小写与首尾空白差异。"""
         return (query or "").strip().lower()
 
-    def get(self, query: str) -> Optional[Any]:
+    def get(self, query: str) -> Any | None:
         """获取意图缓存，命中且未过期返回 IntentResult，否则 None。"""
         if not self._enabled:
             return None
@@ -530,7 +513,7 @@ class IntentCache:
             self._store.clear()
             return cleared
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """返回缓存统计（线程安全）。"""
         with self._lock:
             total = self._hits + self._misses
@@ -576,8 +559,8 @@ class ConcurrencyOptimizer:
         self._retrieval_sem = threading.Semaphore(max_concurrent_retrieval)
         self._llm_sem = threading.Semaphore(max_concurrent_llm)
         # 异步信号量按 loop 缓存，避免跨 loop 复用报错
-        self._async_retrieval_cache: Dict[Any, asyncio.Semaphore] = {}
-        self._async_llm_cache: Dict[Any, asyncio.Semaphore] = {}
+        self._async_retrieval_cache: dict[Any, asyncio.Semaphore] = {}
+        self._async_llm_cache: dict[Any, asyncio.Semaphore] = {}
         # 线程池：复用避免反复创建销毁
         self._executor = ThreadPoolExecutor(
             max_workers=max_concurrent_retrieval + max_concurrent_llm,
@@ -591,9 +574,7 @@ class ConcurrencyOptimizer:
         self._rejected_retrieval = 0
         self._rejected_llm = 0
         # 响应时间采样（最近 N 次，FIFO 自动丢弃）
-        self._response_times: Deque[float] = deque(
-            maxlen=RESPONSE_TIME_SAMPLE_LIMIT
-        )
+        self._response_times: deque[float] = deque(maxlen=RESPONSE_TIME_SAMPLE_LIMIT)
         self._lock = threading.RLock()
 
     # ---------- 异步限流 ----------
@@ -605,9 +586,7 @@ class ConcurrencyOptimizer:
         """
         loop = asyncio.get_running_loop()
         if loop not in self._async_retrieval_cache:
-            self._async_retrieval_cache[loop] = asyncio.Semaphore(
-                self._max_retrieval
-            )
+            self._async_retrieval_cache[loop] = asyncio.Semaphore(self._max_retrieval)
         return self._async_retrieval_cache[loop]
 
     @property
@@ -641,21 +620,15 @@ class ConcurrencyOptimizer:
                 self._active_retrieval -= 1
             self._retrieval_sem.release()
 
-    async def _execute_async(
-        self, func: Callable, *args: Any, **kwargs: Any
-    ) -> Any:
+    async def _execute_async(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """执行 async/sync 函数：协程直接 await，同步函数放线程池。"""
         if asyncio.iscoroutinefunction(func):
             return await func(*args, **kwargs)
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: func(*args, **kwargs)
-        )
+        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
     # ---------- 同步限流 ----------
-    def run_in_threadpool_with_limit(
-        self, func: Callable, *args: Any, **kwargs: Any
-    ) -> Any:
+    def run_in_threadpool_with_limit(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """同步线程池限流：信号量耗尽时降级为当前线程同步执行。
 
         保证请求不丢失，仅记录 rejected 计数。
@@ -714,7 +687,7 @@ class ConcurrencyOptimizer:
             return len(self._response_times)
 
     # ---------- 统计 ----------
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """返回并发与响应时间统计（线程安全）。"""
         with self._lock:
             return {
@@ -747,10 +720,10 @@ class ConcurrencyOptimizer:
 # ----------------------------------------------------------------------
 # 单例管理（进程内复用，测试可 reset）
 # ----------------------------------------------------------------------
-_model_router: Optional[ModelRouter] = None
-_hot_query_cache: Optional[HotQueryCache] = None
-_intent_cache: Optional[IntentCache] = None
-_concurrency_optimizer: Optional[ConcurrencyOptimizer] = None
+_model_router: ModelRouter | None = None
+_hot_query_cache: HotQueryCache | None = None
+_intent_cache: IntentCache | None = None
+_concurrency_optimizer: ConcurrencyOptimizer | None = None
 _singleton_lock = threading.Lock()
 
 
@@ -828,7 +801,7 @@ def reset_concurrency_optimizer() -> None:
 # ----------------------------------------------------------------------
 # 性能指标聚合
 # ----------------------------------------------------------------------
-def _percentile(values: List[float], p: float) -> float:
+def _percentile(values: list[float], p: float) -> float:
     """计算分位数（线性插值法），空列表返回 0.0。
 
     p 取 0-1 之间，如 0.95 表示 P95。
@@ -862,9 +835,7 @@ def get_performance_metrics() -> PerformanceMetrics:
     concurrency_stats = ConcurrencyStats(**optimizer.get_stats())
     routing_dict = router.get_stats()
     # 构建 per_model 列表
-    per_model = [
-        ModelRouteStat(**item) for item in routing_dict.get("per_model", [])
-    ]
+    per_model = [ModelRouteStat(**item) for item in routing_dict.get("per_model", [])]
     routing_stats = ModelRoutingStats(
         small_model=routing_dict["small_model"],
         large_model=routing_dict["large_model"],
@@ -881,9 +852,7 @@ def get_performance_metrics() -> PerformanceMetrics:
 
     first_token_durations = get_monitor().get_stream_first_token_durations()
     first_token_avg = (
-        sum(first_token_durations) / len(first_token_durations)
-        if first_token_durations
-        else 0.0
+        sum(first_token_durations) / len(first_token_durations) if first_token_durations else 0.0
     )
     first_token_p95 = _percentile(first_token_durations, 0.95)
 

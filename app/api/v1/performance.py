@@ -6,17 +6,19 @@
 - POST /api/v1/performance/cache/invalidate：清空热点缓存（知识库更新后调用）
 
 设计要点：
-- 不做鉴权，便于运维面板与知识库更新流水线无凭据调用（生产可加反代鉴权）
+- 通过 API Key 鉴权保护性能监控接口，未配置 API_KEY 时进入开发免鉴权模式
 - 全部委托给 core.performance 单例，API 层保持薄壳
 - 不修改 main.py：路由在测试中显式 include，生产可由部署层按需挂载
 """
-from fastapi import APIRouter
+
+from fastapi import APIRouter, Depends
 
 from app.core.logging import get_logger
 from app.core.performance import (
     get_hot_query_cache,
     get_performance_metrics,
 )
+from app.core.security import verify_api_key
 from app.schemas.performance import (
     CacheStats,
     CacheStatsResponse,
@@ -27,7 +29,11 @@ from app.schemas.performance import (
 
 logger = get_logger("app.api.v1.performance")
 
-router = APIRouter(prefix="/api/v1/performance", tags=["性能监控"])
+router = APIRouter(
+    prefix="/api/v1/performance",
+    tags=["性能监控"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 
 @router.get("/metrics", response_model=MetricsResponse)

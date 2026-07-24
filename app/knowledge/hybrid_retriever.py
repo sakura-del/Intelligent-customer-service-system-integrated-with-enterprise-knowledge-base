@@ -4,10 +4,24 @@
 BM25 擅长精确关键词匹配但对同义词无能为力。
 两路召回后用 RRF（Reciprocal Rank Fusion）融合排名，
 取长补短提升整体召回率与排序质量。
+
+召回链路采用 ThreadPoolExecutor 并行执行：
+- 向量路与 BM25 路互不依赖，并行可显著降低端到端延迟
+- 任一路失败不影响另一路，实现异常降级
+- 超时后用已完成的召回结果降级，避免单路阻塞拖垮整体
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from concurrent.futures import (
+    Future,
+    ThreadPoolExecutor,
+    as_completed,
+)
+from concurrent.futures import (
+    TimeoutError as FuturesTimeoutError,
+)
+from typing import Any
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -29,13 +43,14 @@ class HybridRetriever:
 
     def __init__(
         self,
-        vector_store: Optional[VectorStore] = None,
-        bm25_retriever: Optional[BM25Retriever] = None,
-        vector_top_k: Optional[int] = None,
-        bm25_top_k: Optional[int] = None,
-        rrf_k: Optional[int] = None,
-        rrf_vector_weight: Optional[float] = None,
-        rrf_keyword_weight: Optional[float] = None,
+        vector_store: VectorStore | None = None,
+        bm25_retriever: BM25Retriever | None = None,
+        vector_top_k: int | None = None,
+        bm25_top_k: int | None = None,
+        rrf_k: int | None = None,
+        rrf_vector_weight: float | None = None,
+        rrf_keyword_weight: float | None = None,
+        parallel_timeout: float | None = None,
     ) -> None:
         settings = get_settings()
         self._vector_store = vector_store
@@ -45,8 +60,12 @@ class HybridRetriever:
         self._bm25_top_k = bm25_top_k or settings.BM25_TOP_K
         self._rrf_k = rrf_k or settings.RRF_K
         self._rrf_vector_weight = rrf_vector_weight or settings.RRF_VECTOR_WEIGHT
-        self._rrf_keyword_weight = (
-            rrf_keyword_weight or settings.RRF_KEYWORD_WEIGHT
+        self._rrf_keyword_weight = rrf_keyword_weight or settings.RRF_KEYWORD_WEIGHT
+        # 并行召回超时：超过该时间未完成的 future 不再等待，用已完成结果降级
+        self._parallel_timeout: float = (
+            parallel_timeout
+            if parallel_timeout is not None
+            else float(settings.RETRIEVAL_PARALLEL_TIMEOUT)
         )
 
         # BM25 索引缓存：避免每次检索都重建
@@ -71,47 +90,103 @@ class HybridRetriever:
         question: str,
         top_k: int = 20,
         score_threshold: float = 0.0,
-        where: Optional[Dict[str, Any]] = None,
-    ) -> List[RetrievedChunk]:
-        """混合检索：向量 + BM25 双路召回后 RRF 融合。
+        where: dict[str, Any] | None = None,
+    ) -> list[RetrievedChunk]:
+        """混合检索：向量 + BM25 双路并行召回后 RRF 融合。
 
         流程：
-        1. 向量召回 top vector_top_k
-        2. BM25 召回 top bm25_top_k（索引按需构建）
-        3. RRF 加权融合两路排名
-        4. 取 top_k 并按阈值过滤
+        1. 向量召回与 BM25 召回并行执行（ThreadPoolExecutor）
+        2. 任一路失败不影响另一路，实现异常降级
+        3. 超时后用已完成的召回结果降级，避免单路阻塞拖垮整体
+        4. RRF 加权融合两路排名
+        5. 取 top_k 并按阈值过滤
         """
         if not question or not question.strip():
             return []
 
-        # 1. 向量召回：复用 embedding 与 vectorstore
-        vector_hits = self._vector_retrieve(question, where)
-        logger.debug(
-            "向量召回：question=%r 命中=%d", question[:30], len(vector_hits)
-        )
+        # BM25 召回辅助函数：先确保索引构建，再执行检索
+        # 不修改 _bm25_retrieve 本身；索引构建与向量召回并行进行以节省总耗时
+        def _bm25_retrieve_safe(q: str) -> list[tuple[str, float]]:
+            self._ensure_bm25_index()
+            return self._bm25_retrieve(q)
 
-        # 2. BM25 召回：确保索引已构建
-        self._ensure_bm25_index()
-        bm25_hits = self._bm25_retrieve(question)
-        logger.debug(
-            "BM25 召回：question=%r 命中=%d", question[:30], len(bm25_hits)
-        )
+        vector_hits: list[dict[str, Any]] = []
+        bm25_hits: list[tuple[str, float]] = []
+
+        # 双路并行召回：max_workers=2 足够，避免无谓线程开销
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            vector_future: Future[list[dict[str, Any]]] = executor.submit(
+                self._vector_retrieve, question, where
+            )
+            bm25_future: Future[list[tuple[str, float]]] = executor.submit(
+                _bm25_retrieve_safe, question
+            )
+
+            future_to_name: dict[Future[Any], str] = {
+                vector_future: "vector",
+                bm25_future: "bm25",
+            }
+
+            # as_completed 在每个 future 完成时 yield；timeout 控制总等待上限
+            try:
+                for future in as_completed(
+                    [vector_future, bm25_future],
+                    timeout=self._parallel_timeout,
+                ):
+                    name = future_to_name[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        # 单路召回失败：记录告警，跳过该路，另一路仍可正常融合
+                        logger.warning("%s 召回失败，降级跳过该路：%s", name, exc)
+                        continue
+                    if name == "vector":
+                        vector_hits = result
+                        logger.debug(
+                            "向量召回：question=%r 命中=%d",
+                            question[:30],
+                            len(vector_hits),
+                        )
+                    else:
+                        bm25_hits = result
+                        logger.debug(
+                            "BM25 召回：question=%r 命中=%d",
+                            question[:30],
+                            len(bm25_hits),
+                        )
+            except FuturesTimeoutError:
+                # 超时：用已完成的结果降级，未完成的 future 在 with 退出后由 executor 清理
+                logger.warning(
+                    "并行召回超时（%.1fs），使用已完成的召回结果降级",
+                    self._parallel_timeout,
+                )
+                for future, name in future_to_name.items():
+                    # 仅取已完成且未抛异常的结果，避免重复覆盖
+                    if not future.done() or future.cancelled():
+                        continue
+                    try:
+                        result = future.result()
+                    except Exception:
+                        continue
+                    if name == "vector" and not vector_hits:
+                        vector_hits = result
+                    elif name == "bm25" and not bm25_hits:
+                        bm25_hits = result
 
         if not vector_hits and not bm25_hits:
             return []
 
-        # 3. RRF 加权融合：按 chunk_id 聚合两路排名
+        # RRF 加权融合：按 chunk_id 聚合两路排名（融合逻辑保持不变）
         fused = self._rrf_fuse(vector_hits, bm25_hits)
 
-        # 4. 取 top_k 并转 RetrievedChunk
+        # 取 top_k 并转 RetrievedChunk
         # 用 chroma id 反查元数据，避免重复查询
         metadata_map = {hit["id"]: hit for hit in vector_hits}
         bm25_text_map = {
-            chunk_id: self.bm25_retriever.get_text(chunk_id)
-            for chunk_id, _ in bm25_hits
+            chunk_id: self.bm25_retriever.get_text(chunk_id) for chunk_id, _ in bm25_hits
         }
 
-        retrieved: List[RetrievedChunk] = []
+        retrieved: list[RetrievedChunk] = []
         for chunk_id, rrf_score in fused[:top_k]:
             # 优先从向量召回结果取元数据（含 similarity、source 等）
             hit = metadata_map.get(chunk_id)
@@ -157,9 +232,7 @@ class HybridRetriever:
         )
         return retrieved
 
-    def _vector_retrieve(
-        self, question: str, where: Optional[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _vector_retrieve(self, question: str, where: dict[str, Any] | None) -> list[dict[str, Any]]:
         """向量召回：embed_query → vectorstore.query。"""
         embedding_service = get_embedding_service()
         query_embedding = embedding_service.embed_query(question)
@@ -173,7 +246,7 @@ class HybridRetriever:
             where=where,
         )
 
-    def _bm25_retrieve(self, question: str) -> List[Tuple[str, float]]:
+    def _bm25_retrieve(self, question: str) -> list[tuple[str, float]]:
         """BM25 关键词召回。"""
         return self.bm25_retriever.search(question, top_k=self._bm25_top_k)
 
@@ -185,10 +258,7 @@ class HybridRetriever:
         - 避免每次检索都全量重建，节省 CPU 与内存
         """
         current_count = self.vector_store.count()
-        if (
-            self.bm25_retriever.size == 0
-            or self._indexed_count != current_count
-        ):
+        if self.bm25_retriever.size == 0 or self._indexed_count != current_count:
             logger.info(
                 "BM25 索引需重建：当前=%d 已索引=%d",
                 current_count,
@@ -205,8 +275,8 @@ class HybridRetriever:
             return
 
         # 用 chroma id 作为 chunk_id，便于 RRF 融合时跨路匹配
-        chunks: List[TextChunk] = []
-        ids: List[str] = []
+        chunks: list[TextChunk] = []
+        ids: list[str] = []
         for hit in all_hits:
             chunks.append(TextChunk(text=hit.get("text", "")))
             ids.append(str(hit.get("id", "")))
@@ -215,34 +285,30 @@ class HybridRetriever:
 
     def _rrf_fuse(
         self,
-        vector_hits: List[Dict[str, Any]],
-        bm25_hits: List[Tuple[str, float]],
-    ) -> List[Tuple[str, float]]:
+        vector_hits: list[dict[str, Any]],
+        bm25_hits: list[tuple[str, float]],
+    ) -> list[tuple[str, float]]:
         """RRF 加权融合：score = Σ weight_i * 1/(k + rank_i)。
 
         rank 从 1 开始（rank=1 表示该路第 1 名）；
         k=60 是经验值，平滑排名差异避免 top-1 过度主导。
         """
-        scores: Dict[str, float] = {}
+        scores: dict[str, float] = {}
 
         # 向量路：按 similarity 降序赋 rank
-        vector_ranked = sorted(
-            vector_hits, key=lambda h: h.get("similarity", 0.0), reverse=True
-        )
+        vector_ranked = sorted(vector_hits, key=lambda h: h.get("similarity", 0.0), reverse=True)
         for rank, hit in enumerate(vector_ranked, start=1):
             chunk_id = str(hit.get("id", ""))
             if not chunk_id:
                 continue
-            scores[chunk_id] = (
-                scores.get(chunk_id, 0.0)
-                + self._rrf_vector_weight * (1.0 / (self._rrf_k + rank))
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + self._rrf_vector_weight * (
+                1.0 / (self._rrf_k + rank)
             )
 
         # 关键词路：BM25 已按分数降序返回，直接赋 rank
         for rank, (chunk_id, _) in enumerate(bm25_hits, start=1):
-            scores[chunk_id] = (
-                scores.get(chunk_id, 0.0)
-                + self._rrf_keyword_weight * (1.0 / (self._rrf_k + rank))
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + self._rrf_keyword_weight * (
+                1.0 / (self._rrf_k + rank)
             )
 
         # 按融合分数降序排列
@@ -251,7 +317,7 @@ class HybridRetriever:
 
 
 # 模块级单例：无状态，进程内复用
-_hybrid_retriever: Optional[HybridRetriever] = None
+_hybrid_retriever: HybridRetriever | None = None
 
 
 def get_hybrid_retriever() -> HybridRetriever:
