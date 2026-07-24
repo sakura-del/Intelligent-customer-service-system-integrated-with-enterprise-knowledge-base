@@ -22,12 +22,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+# 测试用 API Key：开启鉴权后，所有请求需携带该头
+TEST_API_KEY = "test-key"
+API_HEADERS = {"X-API-Key": TEST_API_KEY}
+
 
 # ----------------------------------------------------------------------
 # 可控的 LLM 客户端：用于测试 chat_with_routing 的 model 切换与降级
 # ----------------------------------------------------------------------
 class FakeLLMClient:
-    """记录 model 与调用历史的假 LLM 客户端。"""
+    """记录 model 与调用历史的假 LLM 客户端。
+
+    适配新契约：model 通过 kwargs 传入而非修改 self.model 属性，
+    避免高并发下的竞态条件。chat 从 kwargs 读取 model 记入 call_history。
+    """
 
     def __init__(self, model: str = "mock-model", reply: str = "mock-reply") -> None:
         self.model = model
@@ -36,12 +44,18 @@ class FakeLLMClient:
         self.call_history: List[Dict[str, Any]] = []
 
     def chat(self, messages: List[Dict[str, Any]], **kwargs: Any) -> str:
-        self.call_history.append({"model": self.model, "messages": messages})
+        # 从 kwargs 读取 model，未传时用 self.model（与 LLMClient.chat 行为一致）
+        actual_model = kwargs.get("model", None) or self.model
+        self.call_history.append({"model": actual_model, "messages": messages})
         return self._reply
 
 
 class FailingLLMClient:
-    """非默认 model 下抛异常，用于测试降级重试。"""
+    """非默认 model 下抛异常，用于测试降级重试。
+
+    适配新契约：model 通过 kwargs 传入，chat 从 kwargs 读取实际使用的 model，
+    与默认 model 不符时抛异常触发降级重试。
+    """
 
     def __init__(self, default_model: str = "mock-model") -> None:
         self.model = default_model
@@ -51,8 +65,10 @@ class FailingLLMClient:
 
     def chat(self, messages: List[Dict[str, Any]], **kwargs: Any) -> str:
         self.call_count += 1
+        # 从 kwargs 读取 model，未传时用 self.model（与 LLMClient.chat 行为一致）
+        actual_model = kwargs.get("model", None) or self.model
         # 非默认 model 视为调用失败，触发降级
-        if self.model != self._default:
+        if actual_model != self._default:
             raise RuntimeError("simulated failure for non-default model")
         return "degraded-reply"
 
@@ -80,6 +96,9 @@ def _reset_performance_singletons():
     settings.SMALL_LLM_API_KEY = ""
     # 强制 Langfuse 关闭：避免 .env 配置真实 key 时 LLMClient 误用 langfuse.openai
     settings.LANGFUSE_ENABLED = False
+    # 开启鉴权：使 verify_api_key 进入生产校验路径
+    original_api_key = settings.API_KEY
+    settings.API_KEY = TEST_API_KEY
 
     reset_model_router()
     reset_hot_query_cache()
@@ -88,6 +107,7 @@ def _reset_performance_singletons():
     yield
 
     settings.SMALL_LLM_API_KEY = original_small_key
+    settings.API_KEY = original_api_key
     reset_model_router()
     reset_hot_query_cache()
     reset_concurrency_optimizer()
@@ -614,7 +634,7 @@ def test_concurrency_async_limit_degrades_when_exhausted():
 
 def test_api_metrics_returns_structure(app_client):
     """GET /api/v1/performance/metrics 应返回完整性能指标结构。"""
-    resp = app_client.get("/api/v1/performance/metrics")
+    resp = app_client.get("/api/v1/performance/metrics", headers=API_HEADERS)
     assert resp.status_code == 200
     body = resp.json()
     assert "metrics" in body
@@ -649,7 +669,7 @@ def test_api_cache_stats_returns_structure(app_client):
     cache.reset_stats()
     cache.set("q1", "a1")
 
-    resp = app_client.get("/api/v1/performance/cache/stats")
+    resp = app_client.get("/api/v1/performance/cache/stats", headers=API_HEADERS)
     assert resp.status_code == 200
     body = resp.json()
     assert "cache" in body
@@ -667,7 +687,7 @@ def test_api_cache_invalidate_clears(app_client):
     cache.set("q1", "a1")
     cache.set("q2", "a2")
 
-    resp = app_client.post("/api/v1/performance/cache/invalidate")
+    resp = app_client.post("/api/v1/performance/cache/invalidate", headers=API_HEADERS)
     assert resp.status_code == 200
     body = resp.json()
     assert body["success"] is True
@@ -690,7 +710,7 @@ def test_api_metrics_reflects_state(app_client):
     cache.set("metric-test", "reply")
     cache.get("metric-test")  # hit
 
-    resp = app_client.get("/api/v1/performance/metrics")
+    resp = app_client.get("/api/v1/performance/metrics", headers=API_HEADERS)
     assert resp.status_code == 200
     metrics = resp.json()["metrics"]
     assert metrics["cache"]["hits"] >= 1

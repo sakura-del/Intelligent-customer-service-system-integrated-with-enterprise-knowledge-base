@@ -71,6 +71,63 @@ API_KEY=your-secret-api-key
     curl -H "X-API-Key: your-secret-api-key" http://localhost:8000/api/v1/chat ...
     ```
 
+!!! tip "Constant-time comparison"
+    `verify_api_key` uses `secrets.compare_digest` for constant-time comparison, preventing attackers from guessing the API Key character by character via response timing differences. On startup, if `API_KEY` is empty, a WARNING is logged to remind ops staff.
+
+---
+
+## :material-shield-check: Security Configuration
+
+Security-related options introduced by the production hardening pass, covering four dimensions: CORS, rate limiting, sensitive words, and session lifecycle. All options can be injected via environment variables or `.env`; see the `Settings` class in `app/core/config.py`.
+
+### Options
+
+| Variable | Default | Description | Impact |
+|----------|---------|-------------|--------|
+| `ALLOWED_ORIGINS` | `""` (empty) | CORS allowlist, comma-separated (e.g., `https://example.com,https://app.example.com`); empty + `DEBUG=True` allows all origins (no credentials); empty + `DEBUG=False` denies all origins | CORS middleware |
+| `RATE_LIMIT_ENABLED` | `True` | Whether to enable global IP rate limiting; `False` disables rate limiting on all endpoints (degrades to pass-through) | Global rate limit middleware |
+| `SENSITIVE_WORDS` | `""` (empty) | Extra runtime sensitive words, comma-separated; merged with `app/knowledge/sensitive_words.txt`, default level `warn` | Content filter |
+| `SESSION_TTL` | `1800` | Session timeout (seconds); sessions inactive longer than this are cleaned up, default 30 minutes | Session cleanup |
+| `SESSION_CLEANUP_INTERVAL` | `300` | Cleanup scan interval (seconds); background thread scans expired sessions at this cadence, default 5 minutes | Session cleanup |
+
+```bash
+# CORS allowlist (production must list frontend domains)
+ALLOWED_ORIGINS=https://example.com,https://app.example.com
+
+# Rate limit switch (recommended on in production)
+RATE_LIMIT_ENABLED=True
+
+# Extra sensitive words (merged with sensitive_words.txt)
+SENSITIVE_WORDS=competitorA,competitorB,internalCodename
+
+# Session timeout and cleanup
+SESSION_TTL=1800
+SESSION_CLEANUP_INTERVAL=300
+```
+
+### Security Features
+
+The following security mechanisms are built-in and effective without extra configuration:
+
+- **API Key constant-time comparison**: `secrets.compare_digest` prevents timing attacks
+- **Startup WARNING for empty API_KEY**: at startup, if `API_KEY` is empty, a security warning is logged
+- **CORS allowlist + security response headers**: credentials are only allowed in allowlist mode; responses automatically include `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`; `Strict-Transport-Security` (HSTS) is appended under HTTPS
+- **Global IP rate limiting**: sliding window algorithm, default 60 req/min/IP; exceeding returns 429 with a `Retry-After` header
+- **Bidirectional sensitive-word filtering**: efficient multi-pattern matching via Aho-Corasick automaton, with three levels — `block` (reject), `warn` (replace whole word with `***`), `mask` (keep first/last char, mask the middle); input side only blocks `block`-level hits, output side replaces `warn`/`mask`
+- **Automatic PII masking in logs**: log filter auto-detects and masks phone numbers (first 3 / last 4), ID cards (first 6 / last 4), emails (first char of username), bank cards (first 4 / last 4)
+- **Session timeout auto-cleanup**: a background daemon thread scans at `SESSION_CLEANUP_INTERVAL` and cleans up sessions inactive for longer than `SESSION_TTL`
+- **File upload limits**: type allowlist (`.md`/`.txt`/`.pdf`/`.docx`) + 10 MB upper bound; violations return 413/415
+- **Ops API authentication**: ops endpoints like `/api/v1/knowledge/*` and `/api/v1/operations/*` enforce `verify_api_key` as a hard dependency
+
+!!! warning "CORS allowlist mode"
+    When `ALLOWED_ORIGINS` is empty and `DEBUG=False`, CORS denies all cross-origin requests and the frontend cannot access the API. Production must explicitly list the frontend domains.
+
+!!! tip "Rate-limit fallback"
+    When `RATE_LIMIT_ENABLED=False`, global rate limiting degrades to pass-through and is only recommended for load testing or debugging. Multi-process deployments should switch to a shared-store limiter such as Redis.
+
+??? info "Sensitive-word file format"
+    Each line in `app/knowledge/sensitive_words.txt` follows `word|level`; without `|`, the default level is `warn`; lines starting with `#` are comments. After editing, restart the service or call `reset_content_filter()` to rebuild the Aho-Corasick automaton.
+
 ---
 
 ## :material-robot: LLM Configuration

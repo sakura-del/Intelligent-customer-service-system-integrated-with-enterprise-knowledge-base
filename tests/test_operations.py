@@ -22,6 +22,10 @@ from fastapi.testclient import TestClient
 # 测试用独立持久化目录
 TEST_PERSIST_DIR = "./tests/_chroma_data_operations"
 
+# 测试用 API Key：开启鉴权后，所有请求需携带该头
+TEST_API_KEY = "test-key"
+API_HEADERS = {"X-API-Key": TEST_API_KEY}
+
 
 # ----------------------------------------------------------------------
 # 模块级 fixture：隔离 ChromaDB 目录与重置单例
@@ -46,6 +50,9 @@ def _isolate_chroma_and_singletons():
     settings = get_settings()
     original_persist_dir = settings.CHROMA_PERSIST_DIR
     settings.CHROMA_PERSIST_DIR = TEST_PERSIST_DIR
+    # 开启鉴权：使 verify_api_key 进入生产校验路径
+    original_api_key = settings.API_KEY
+    settings.API_KEY = TEST_API_KEY
 
     # 清理上次残留
     persist_path = Path(TEST_PERSIST_DIR)
@@ -65,6 +72,7 @@ def _isolate_chroma_and_singletons():
 
     # 恢复配置并清理单例
     settings.CHROMA_PERSIST_DIR = original_persist_dir
+    settings.API_KEY = original_api_key
     vectorstore_module.reset_vector_store()
     document_store_module.reset_document_store()
     ticket_store_module.reset_ticket_store()
@@ -573,7 +581,7 @@ def client_get_dashboard(force_refresh: bool = False):
     url = "/api/v1/operations/dashboard"
     if force_refresh:
         url += "?force_refresh=true"
-    return client.get(url)
+    return client.get(url, headers=API_HEADERS)
 
 
 def test_api_get_dashboard_force_refresh():
@@ -589,7 +597,7 @@ def test_api_get_release_checklist_returns_200():
     app = FastAPI()
     app.include_router(operations_router)
     client = TestClient(app)
-    response = client.get("/api/v1/operations/release-checklist")
+    response = client.get("/api/v1/operations/release-checklist", headers=API_HEADERS)
     assert response.status_code == 200
     body = response.json()
     assert "passed" in body
@@ -608,7 +616,7 @@ def test_api_dashboard_caches_within_ttl():
     app = FastAPI()
     app.include_router(operations_router)
     client = TestClient(app)
-    first = client.get("/api/v1/operations/dashboard").json()
-    second = client.get("/api/v1/operations/dashboard").json()
+    first = client.get("/api/v1/operations/dashboard", headers=API_HEADERS).json()
+    second = client.get("/api/v1/operations/dashboard", headers=API_HEADERS).json()
     # 缓存命中：collected_at 应一致
     assert first["collected_at"] == second["collected_at"]

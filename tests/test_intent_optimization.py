@@ -309,7 +309,11 @@ class _FakeSmallLLMClient:
 
 
 class _FakeMainLLMClient:
-    """记录 model 切换的主 LLM 假客户端。"""
+    """记录 model 切换的主 LLM 假客户端。
+
+    适配新契约：model 通过 kwargs 传入而非修改 self.model 属性，
+    chat 从 kwargs 读取实际使用的 model 记入 call_history。
+    """
 
     def __init__(self, reply: str = "main-model-reply") -> None:
         self.model = "deepseek-chat"
@@ -318,7 +322,9 @@ class _FakeMainLLMClient:
         self.call_history: List[Dict[str, Any]] = []
 
     def chat(self, messages, **kwargs):
-        self.call_history.append({"model": self.model})
+        # 从 kwargs 读取 model，未传时用 self.model（与 LLMClient.chat 行为一致）
+        actual_model = kwargs.get("model", None) or self.model
+        self.call_history.append({"model": actual_model})
         return self._reply
 
 
@@ -346,7 +352,7 @@ def test_model_router_uses_small_client_when_available():
 
 
 def test_model_router_fallback_to_main_when_small_unavailable():
-    """小模型客户端不可用时，应降级到主 client 临时切换 model。"""
+    """小模型客户端不可用时，应降级到主 client 并通过 model 参数传递小模型名。"""
     from app.agents import llm_client as llm_client_module
     from app.core.performance import get_model_router
 
@@ -362,10 +368,10 @@ def test_model_router_fallback_to_main_when_small_unavailable():
         [{"role": "user", "content": "你好"}], query="你好"
     )
     assert result == "main-model-reply"
-    # 主 client 应被调用，model 临时切换为小模型名
+    # 主 client 应被调用，通过 model 参数传递小模型名
     assert len(fake_main.call_history) == 1
     assert fake_main.call_history[0]["model"] == router._small_model
-    # 调用后 model 应恢复
+    # main_client.model 属性不应被修改
     assert fake_main.model == "deepseek-chat"
 
 
