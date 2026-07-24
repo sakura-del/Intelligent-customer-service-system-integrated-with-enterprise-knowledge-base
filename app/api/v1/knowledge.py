@@ -3,20 +3,17 @@
 提供文档入库、统计、文档管理（列表/详情/删除）、质量校验、
 版本回滚与灰度验证的 HTTP 接口，作为知识库管理后台的 API 入口。
 """
+
 from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
-from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.core.security import verify_api_key
 from app.knowledge.document_store import get_document_store
-from app.knowledge.embeddings import get_embedding_service
 from app.knowledge.pipeline import get_stats, ingest_document
 from app.knowledge.quality import run_quality_check_on_existing
 from app.knowledge.vectorstore import get_vector_store
@@ -48,14 +45,18 @@ router = APIRouter(
 # 入库与统计（既有端点，扩展可选参数）
 # ----------------------------------------------------------------------
 
+# 文件上传安全限制：白名单后缀与最大文件大小
+ALLOWED_FILE_TYPES = {".md", ".txt", ".pdf", ".docx"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
 
 @router.post("/ingest", response_model=IngestResult)
 def ingest_document_api(
     file: UploadFile = File(..., description="待入库的文档文件"),
-    product_category: Optional[str] = Form(None, description="产品分类，默认 unknown"),
-    applicable_version: Optional[str] = Form(None, description="适用版本，默认 latest"),
-    knowledge_type: Optional[str] = Form(None, description="知识类型：faq/policy/doc/tutorial/ticket"),
-    published_at: Optional[str] = Form(None, description="发布时间，ISO8601 字符串"),
+    product_category: str | None = Form(None, description="产品分类，默认 unknown"),
+    applicable_version: str | None = Form(None, description="适用版本，默认 latest"),
+    knowledge_type: str | None = Form(None, description="知识类型：faq/policy/doc/tutorial/ticket"),
+    published_at: str | None = Form(None, description="发布时间，ISO8601 字符串"),
     register: bool = Form(False, description="是否注册到文档注册表以启用版本管理"),
     validate_quality: bool = Form(False, description="是否在入库时执行质量校验"),
 ) -> IngestResult:
@@ -65,6 +66,22 @@ def ingest_document_api(
     处理完成自动清理临时文件，避免磁盘泄漏。
     register=true 时注册到文档注册表，便于后续版本管理与回滚。
     """
+    # 文件类型白名单校验：在解析前拦截不支持的类型，避免无效处理
+    file_ext = Path(file.filename or "").suffix.lower()
+    if file_ext not in ALLOWED_FILE_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"不支持的文件类型：{file_ext}，仅支持 {', '.join(ALLOWED_FILE_TYPES)}",
+        )
+
+    # 读取文件内容并校验大小：超过上限直接拒绝，避免占用过多内存与存储
+    content = file.file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"文件过大（{len(content)} 字节），最大允许 {MAX_FILE_SIZE} 字节（10MB）",
+        )
+
     # 元数据覆盖项：未提供的字段由流水线使用默认值
     metadata = {}
     if product_category:
@@ -77,9 +94,8 @@ def ingest_document_api(
         metadata["published_at"] = published_at
 
     # UploadFile 默认在内存中，落盘到临时目录后由 parsers 读取
-    suffix = Path(file.filename or "").suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as buffer:
-        buffer.write(file.file.read())
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as buffer:
+        buffer.write(content)
         temp_path = buffer.name
 
     try:
@@ -193,18 +209,16 @@ def quality_check_api(request: QualityCheckRequest) -> QualityReport:
     支持按 source 或 doc_id 过滤，均未提供时巡检全量内容。
     去重检测基于库内 chunks 两两比对，发现内部重复片段。
     """
-    chunks, embeddings = _fetch_existing_chunks(
-        source=request.source, doc_id=request.doc_id
-    )
+    chunks, embeddings = _fetch_existing_chunks(source=request.source, doc_id=request.doc_id)
     if not chunks:
         return QualityReport(total_chunks=0, summary="无已入库内容可巡检")
     return run_quality_check_on_existing(chunks, embeddings)
 
 
 def _fetch_existing_chunks(
-    source: Optional[str] = None,
-    doc_id: Optional[str] = None,
-) -> tuple[List[TextChunk], Optional[List[List[float]]]]:
+    source: str | None = None,
+    doc_id: str | None = None,
+) -> tuple[list[TextChunk], list[list[float]] | None]:
     """从向量库拉取 chunks 及其向量，供质量巡检使用。
 
     过滤条件通过 ChromaDB where 子句下推，避免全量拉取后再过滤。
@@ -227,8 +241,8 @@ def _fetch_existing_chunks(
         documents = result.get("documents") or ["" for _ in ids]
         metadatas = result.get("metadatas") or [{} for _ in ids]
         raw_embeddings = result.get("embeddings")
-        chunks: List[TextChunk] = []
-        embeddings: Optional[List[List[float]]] = []
+        chunks: list[TextChunk] = []
+        embeddings: list[list[float]] | None = []
         for index in range(len(ids)):
             metadata = metadatas[index] if index < len(metadatas) else {}
             chunks.append(

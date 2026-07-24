@@ -12,18 +12,26 @@
 - turn_count / failed_attempts：调度状态计数
 - agent_status / assigned_agent_id / escalation_card / resolve_note：
   坐席辅助字段，跟踪转接后会话的接管状态与备注
+- last_activity：最后活动时间戳（time.monotonic），用于超时清理判定
 
 线程安全：所有读写经同一把锁串行化，保证多线程环境下状态一致。
-内存优化：history 限制最大长度，避免长会话无限增长。
+内存优化：history 限制最大长度，避免长会话无限增长；
+         后台线程定期清理超时会话，释放闲置内存。
 """
+
+import logging
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # 历史对话保留上限：超过则按 FIFO 丢弃最旧条目
 # 选取 20 兼顾上下文充分与内存成本，可按业务调整
 MAX_HISTORY_LENGTH = 20
+
+# 模块级 logger：复用 root logger 配置，setup_logging 后自动生效
+logger = logging.getLogger(__name__)
 
 
 class SessionManager:
@@ -36,7 +44,7 @@ class SessionManager:
     """
 
     def __init__(self) -> None:
-        self._sessions: Dict[str, Dict[str, Any]] = {}
+        self._sessions: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
@@ -45,7 +53,7 @@ class SessionManager:
     def create_session(
         self,
         channel: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> str:
         """创建新会话并返回 session_id。
 
@@ -61,7 +69,7 @@ class SessionManager:
             )
         return session_id
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
         """根据 session_id 获取会话上下文，不存在则返回 None。"""
         with self._lock:
             # 返回浅拷贝避免外部直接修改内部状态
@@ -70,26 +78,26 @@ class SessionManager:
 
     def get_or_create(
         self,
-        session_id: Optional[str],
+        session_id: str | None,
         channel: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
     ) -> str:
         """获取或创建会话，返回有效 session_id。
 
-        传入的 session_id 有效则复用，否则新建会话，
-        保证多轮对话连续性。
+        传入的 session_id 有效则复用并刷新最后活跃时间，
+        否则新建会话，保证多轮对话连续性。
         """
         with self._lock:
             if session_id and session_id in self._sessions:
+                # 复用会话时刷新活跃时间，避免活跃会话被误清理
+                self._sessions[session_id]["last_activity"] = time.monotonic()
                 return session_id
         return self.create_session(channel=channel, user_id=user_id)
 
     # ------------------------------------------------------------------
     # 会话状态更新
     # ------------------------------------------------------------------
-    def update_session(
-        self, session_id: str, **fields: Any
-    ) -> Optional[Dict[str, Any]]:
+    def update_session(self, session_id: str, **fields: Any) -> dict[str, Any] | None:
         """部分更新会话字段。
 
         未知字段也会写入，便于扩展；但内部保留字段（如 session_id）
@@ -109,18 +117,19 @@ class SessionManager:
 
     def append_history(
         self, session_id: str, role: str, content: str
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> list[dict[str, Any]] | None:
         """追加一条对话历史。
 
         history 超过 MAX_HISTORY_LENGTH 时按 FIFO 丢弃最旧条目，
         防止长会话内存无限增长。
+        追加同时刷新 last_activity，使活跃会话免于超时清理。
         返回追加后的历史快照；session_id 不存在则返回 None。
         """
         with self._lock:
             session = self._sessions.get(session_id)
             if session is None:
                 return None
-            history: List[Dict[str, Any]] = session.setdefault("history", [])
+            history: list[dict[str, Any]] = session.setdefault("history", [])
             history.append(
                 {
                     "role": role,
@@ -131,9 +140,20 @@ class SessionManager:
             # 超长时丢弃最旧的若干条，一次切片到上限避免频繁触发
             if len(history) > MAX_HISTORY_LENGTH:
                 del history[: len(history) - MAX_HISTORY_LENGTH]
+            # 追加消息即用户活动，刷新活跃时间戳
+            session["last_activity"] = time.monotonic()
             return list(history)
 
-    def increment_turn(self, session_id: str) -> Optional[int]:
+    def add_message(self, session_id: str, role: str, content: str) -> list[dict[str, Any]] | None:
+        """向会话追加一条消息并刷新活跃时间。
+
+        作为 append_history 的语义化别名，便于调用方按"添加消息"
+        的直觉使用；内部复用 append_history 逻辑避免重复实现。
+        返回追加后的历史快照；session_id 不存在则返回 None。
+        """
+        return self.append_history(session_id, role, content)
+
+    def increment_turn(self, session_id: str) -> int | None:
         """轮次自增，返回新值；session_id 不存在则返回 None。"""
         with self._lock:
             session = self._sessions.get(session_id)
@@ -142,15 +162,13 @@ class SessionManager:
             session["turn_count"] = int(session.get("turn_count", 0)) + 1
             return session["turn_count"]
 
-    def increment_failed(self, session_id: str) -> Optional[int]:
+    def increment_failed(self, session_id: str) -> int | None:
         """连续失败计数自增，返回新值；session_id 不存在则返回 None。"""
         with self._lock:
             session = self._sessions.get(session_id)
             if session is None:
                 return None
-            session["failed_attempts"] = (
-                int(session.get("failed_attempts", 0)) + 1
-            )
+            session["failed_attempts"] = int(session.get("failed_attempts", 0)) + 1
             return session["failed_attempts"]
 
     def reset_failed(self, session_id: str) -> bool:
@@ -182,7 +200,7 @@ class SessionManager:
     # ------------------------------------------------------------------
     # 优先级到数值的映射：数值越大越紧急，便于 list_pending_sessions
     # 按数值降序排序，让坐席优先看到最紧急的会话
-    _PRIORITY_RANK: Dict[str, int] = {
+    _PRIORITY_RANK: dict[str, int] = {
         "highest": 4,
         "high": 3,
         "medium": 2,
@@ -190,7 +208,7 @@ class SessionManager:
         "info": 0,
     }
 
-    def list_pending_sessions(self) -> List[Dict[str, Any]]:
+    def list_pending_sessions(self) -> list[dict[str, Any]]:
         """返回所有 agent_status='pending' 的会话摘要，按 EscalationPriority 降序排列。
 
         排序映射：highest=4 > high=3 > medium=2 > low=1 > info=0
@@ -198,7 +216,7 @@ class SessionManager:
         返回字段：session_id / user_id / priority / escalate_reason / turn_count / created_at / agent_status / assigned_agent_id
         """
         with self._lock:
-            pending: List[Dict[str, Any]] = []
+            pending: list[dict[str, Any]] = []
             for session in self._sessions.values():
                 # 仅关注待接入会话，已接手/已解决的不进入待办列表
                 if session.get("agent_status") != "pending":
@@ -243,9 +261,7 @@ class SessionManager:
             session["assigned_agent_id"] = agent_id
             return True
 
-    def resolve_session(
-        self, session_id: str, note: Optional[str] = None
-    ) -> bool:
+    def resolve_session(self, session_id: str, note: str | None = None) -> bool:
         """原子化标记会话已解决：CAS 判断 assigned → resolved。
 
         仅允许 assigned 状态的会话被标记已解决，
@@ -263,9 +279,7 @@ class SessionManager:
             session["resolve_note"] = note
             return True
 
-    def mark_pending(
-        self, session_id: str, escalation_card: Dict[str, Any]
-    ) -> bool:
+    def mark_pending(self, session_id: str, escalation_card: dict[str, Any]) -> bool:
         """转接触发时将会话置为 pending 并缓存 EscalationCard。
 
         由 EscalationEngine.check_escalation() 调用方在转接决策通过后调用，
@@ -283,6 +297,31 @@ class SessionManager:
     # ------------------------------------------------------------------
     # 维护与诊断
     # ------------------------------------------------------------------
+    def cleanup_expired_sessions(self, ttl_seconds: int = 1800) -> int:
+        """清理超过 TTL 未活动的会话，返回被清理的会话数。
+
+        以 last_activity（time.monotonic 时间戳）为基准，
+        距当前时间超过 ttl_seconds 的会话视为过期并被删除。
+        整个扫描与删除过程持同一把 RLock，保证与并发读写互斥。
+        日志在锁外记录，避免日志 IO 拖慢锁持有时间。
+        """
+        now = time.monotonic()
+        expired_ids: list[str] = []
+        with self._lock:
+            # 先扫描收集过期 session_id，再统一删除，避免边遍历边修改字典
+            for session_id, session in self._sessions.items():
+                last_activity = session.get("last_activity")
+                # last_activity 缺失视为数据异常，主动清理避免脏数据驻留
+                if last_activity is None or (now - last_activity) > ttl_seconds:
+                    expired_ids.append(session_id)
+            for session_id in expired_ids:
+                # pop 避免 KeyError：理论上不会发生，防御性编程
+                self._sessions.pop(session_id, None)
+        # 锁外记录日志，减少锁持有时间
+        if expired_ids:
+            logger.info("清理过期会话：%d 个", len(expired_ids))
+        return len(expired_ids)
+
     def reset_session(self, session_id: str) -> None:
         """删除指定会话，便于测试隔离与手动重置。"""
         with self._lock:
@@ -293,7 +332,7 @@ class SessionManager:
         with self._lock:
             self._sessions.clear()
 
-    def list_sessions(self) -> List[Dict[str, Any]]:
+    def list_sessions(self) -> list[dict[str, Any]]:
         """返回所有活跃会话的摘要列表。
 
         供监控面板使用：按最后活跃时间倒序返回，
@@ -316,9 +355,7 @@ class SessionManager:
                         "channel": session.get("channel"),
                         "user_id": session.get("user_id"),
                         "turn_count": int(session.get("turn_count", 0)),
-                        "failed_attempts": int(
-                            session.get("failed_attempts", 0)
-                        ),
+                        "failed_attempts": int(session.get("failed_attempts", 0)),
                         "current_intent": session.get("current_intent"),
                         "emotion_score": session.get("emotion_score"),
                         "created_at": session.get("created_at"),
@@ -334,8 +371,8 @@ class SessionManager:
     def _default_session_state(
         session_id: str,
         channel: str,
-        user_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         """构造新会话的默认状态字典。
 
         统一在此处定义字段，便于后续接入 Redis 时复用序列化结构。
@@ -364,8 +401,20 @@ class SessionManager:
             "escalation_card": None,
             # 标记已解决时坐席可写入备注，便于事后回溯处理结论
             "resolve_note": None,
+            # 最后活动时间戳：time.monotonic()，用于超时清理判定；
+            # 选择 monotonic 而非 wall clock，避免系统时钟回拨导致误判
+            "last_activity": time.monotonic(),
         }
 
 
 # 全局会话管理单例
 session_manager = SessionManager()
+
+
+def get_session_manager() -> SessionManager:
+    """获取全局 SessionManager 单例。
+
+    作为工厂函数入口，便于 main.py 启动后台清理线程时获取实例，
+    也为后续接入 Redis 等共享存储时替换实现提供统一注入点。
+    """
+    return session_manager
